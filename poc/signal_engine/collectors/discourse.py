@@ -54,6 +54,12 @@ def fetch_forum(client: PoliteClient, host: str, max_topics: int = 30,
                 since: Optional[datetime] = None) -> list[Signal]:
     """Fetch recent topics. Topics created before `since` are skipped *before* the
     detail request, to keep load on the forum minimal."""
+    from .. import sources
+    from .http import FetchBlocked
+    try:
+        sources.require(f"discourse:{host}")
+    except sources.PermissionNotObtained as exc:
+        raise FetchBlocked(str(exc), "permission_not_obtained") from exc
     cfg = FORUMS[host]
     listing = client.get_json(f"https://{host}/{cfg['category']}.json")
     topics = (listing.get("topic_list") or {}).get("topics") or []

@@ -40,10 +40,20 @@ def normalise_ws(s: str) -> str:
     return _WS_RE.sub(" ", s or "").strip()
 
 
+# Named contact persons introduced by a label, e.g. "Contact: Jane Smith", "Attn Mr John Doe".
+# Label is case-insensitive; the NAME must be capitalised words, and the label must be followed by
+# ':' / '-' or an honorific (so "Contact Centre teams" is left alone).
+_NAMED_CONTACT_RE = re.compile(
+    r"\b(?P<label>(?i:contact(?:\s+(?:person|name))?|attn\.?|attention|enquiries\s+to|queries\s+to))"
+    r"(?:\s*[:\-]\s*(?:(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+)?|\s+(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+)"
+    r"[A-Z][a-zà-ÿ'-]+(?:\s+[A-Z][a-zà-ÿ'-]+){1,2}")
+
+
 def redact_pii(s: str) -> str:
-    """Remove emails and phone numbers. We never need them: outreach goes via the source."""
+    """Remove emails, phone numbers and labelled contact names. Outreach goes via the source's own route."""
     s = _EMAIL_RE.sub("[email removed]", s)
     s = _PHONE_RE.sub("[phone removed]", s)
+    s = _NAMED_CONTACT_RE.sub(lambda m: f"{m.group('label')}: [name removed]", s)
     return s
 
 

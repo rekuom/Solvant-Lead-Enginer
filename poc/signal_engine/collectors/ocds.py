@@ -29,7 +29,8 @@ FTS_PACKAGES = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackag
 _GUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 _FTS_ID_RE = re.compile(r"\b(\d{6}-\d{4})\b")
 
-DEFAULT_KEYWORDS = ("automation", "workflow", "integration", "CRM", "RPA", "low code", "chatbot", "AI")
+DEFAULT_KEYWORDS = ("automation", "workflow", "integration", "CRM", "RPA", "low code", "chatbot", "AI",
+                    "artificial intelligence", "document processing", "data extraction")
 
 
 def _first(*vals: Optional[str]) -> Optional[str]:

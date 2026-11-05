@@ -1,9 +1,8 @@
 # Solvant Signal Engine
 
-Buying-intent intelligence for [Solvant.io](https://solvant.io). It finds UK and UAE businesses that are **actively looking for an external provider** to implement AI and workflow automation (typical project £1,000–£3,000). Weaker evidence, such as general complaints, internal recruitment and vendor self-promotion, is separated out and explained.
+Buying-intent intelligence for [Solvant.io](https://solvant.io). It finds organisations in the **UK, UAE and all of Europe** that are **actively looking for an external provider** for AI development, AI agents, workflow automation (n8n, Make, Zapier, Power Automate), CRM and finance automation, document processing and systems integration. **No budget minimum or maximum**: budget is recorded, never used to exclude. Weaker evidence, such as general complaints, internal recruitment and vendor self-promotion, is separated out and explained.
 
-**Status: Phase 2A (live source validation).** No app, no database writes, no deployments.
-The latest run could not reach any source (network policy). See [docs/validation-2a.md](docs/validation-2a.md).
+**Status: live validation ready.** Run it manually from GitHub Actions: [docs/live-validation.md](docs/live-validation.md). No app, no database writes, no deployments.
 
 ## Documents
 
@@ -15,6 +14,7 @@ The latest run could not reach any source (network policy). See [docs/validation
 | [docs/architecture.md](docs/architecture.md) | Next.js + Supabase target design, RLS, privacy, rate limits, costs |
 | [docs/phase-2-plan.md](docs/phase-2-plan.md) | Validation step, exit criteria, build plan |
 | [docs/validation-2a.md](docs/validation-2a.md) | Phase 2A live validation: access probe, funnel, qualification, held-out set |
+| [docs/live-validation.md](docs/live-validation.md) | **Current rules**, markets, source permissions, queues, how to run the GitHub workflow |
 
 ## Proof of concept (`poc/`)
 
@@ -22,8 +22,9 @@ Stdlib-only Python 3.11+. Nothing to install.
 
 ```bash
 cd poc
-python3 -m unittest discover -s tests -v          # 48 tests
-python3 -m signal_engine.validate all --days 30   # Phase 2A: probe, verify, discover, qualify, report
+python3 -m unittest discover -s tests -v          # 68 tests
+python3 -m signal_engine.validate permissions     # which collectors are permitted
+python3 -m signal_engine.validate live --days 30 --max-records 100   # permitted sources only → CSV + Markdown
 python3 -m benchmark.run_benchmark                # dev benchmark (62 items, used for tuning)
 python3 -m benchmark.run_benchmark --set heldout  # independent held-out set (currently empty)
 python3 -m signal_engine.pipeline --candidates data/search_candidates_2026-11-05.json
@@ -43,12 +44,15 @@ poc/
     classify.py         evidence-based tiering, gates, service suggestion
     pipeline.py         CLI: collect → dedupe → classify → JSONL
     probe.py            access probe: proxy block vs upstream refusal vs auth vs rate limit
-    qualify.py          strict commercial qualification (date, UK/UAE place, budget, availability)
+    markets.py          target markets (UK, UAE, Europe) + place-evidence location detection
+    sources.py          source permission registry (collectors gated on it)
+    qualify.py          queues: Priority A/B/C, watchlist, excluded, unverified (budget = info only)
     validate.py         Phase 2A CLI: probe / verify / discover / report / capture
     collectors/
       http.py           polite client (UA, robots.txt, rate limit)
       ocds.py           Contracts Finder + Find a Tender (OCDS)
-      discourse.py      n8n / Make community boards (permission required)
+      discourse.py      n8n / Make community boards (DISABLED: permission not obtained)
+      ted.py            EU TED Search API v3
       search_candidates.py  loader for search-discovered URLs (unverified)
   data/                 real search-discovered candidates (titles + URLs only)
   fixtures/             SYNTHETIC parser fixtures, never counted as leads

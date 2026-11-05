@@ -1,5 +1,7 @@
 # Phase 2 plan
 
+> **Business rules updated 2026-11-05:** markets are now UK, UAE and all of Europe, and there is **no budget minimum or maximum**. Statements below about the £1–3k range or UK/UAE-only scope are historical. Current rules: [live-validation.md](live-validation.md).
+
 Precondition: the go/no-go in [feasibility.md](feasibility.md) is **Conditional GO**. Phase 2 starts with a short validation step (2a). The build (2b) proceeds only if 2a passes its exit criteria.
 
 ## 2a — Live validation (1–2 weeks, about £0 spend)
@@ -15,7 +17,7 @@ Precondition: the go/no-go in [feasibility.md](feasibility.md) is **Conditional 
 | 7 | Human-verify every HOLD_VERIFY candidate in `poc/data/search_candidates_2026-11-05.json`: open each URL and record date, status, country and real tier | Rekuo / reviewer | `poc/benchmark/gold_labels.json` updated with verified labels |
 | 8 | Draft the legitimate-interests assessment (UK GDPR) and a UAE PDPL note | Rekuo / adviser | Signed LIA |
 
-**Exit criteria for 2b.** Count verified Tier A/B signals that are in the UK or UAE, fresh (30 days or less), within or near the £1–3k ticket size, and collectable within the source terms.
+**Exit criteria for 2b** (updated 2026-11-05). Count verified Tier A/B signals in the UK, UAE or Europe, fresh (30 days or less), of any budget, collectable within the source terms.
 - **Go:** 10 or more such signals per month across permitted sources, *or* Upwork/Freelancer API access granted (an on-platform channel with proven volume).
 - **No-go / pivot:** fewer than 10 per month and no marketplace API access. Then pivot to a manual-assisted tool: human capture form, classifier and CRM, with no automated collection.
 

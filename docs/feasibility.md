@@ -1,5 +1,7 @@
 # Phase 1 feasibility report
 
+> **Business rules updated 2026-11-05:** markets are now UK, UAE and all of Europe, and there is **no budget minimum or maximum**. Statements below about the £1–3k range or UK/UAE-only scope are historical. Current rules: [live-validation.md](live-validation.md).
+
 Date: 2026-11-05 · Branch: `claude/trusting-hawking-kqus6b`
 
 > **Update (Phase 2A, 2026-11-05):** the allowed domains were still blocked by this session's network policy. 0 items verified. See [validation-2a.md](validation-2a.md).

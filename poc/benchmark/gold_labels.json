@@ -36,7 +36,7 @@
     {"url": "https://www.find-tender.service.gov.uk/Notice/022456-2026?origin=SearchResults&p=2", "gold": "REJECT", "note": "Title has no automation scope; cannot be justified from title."},
     {"url": "https://www.contractsfinder.service.gov.uk/notice/9dec3987-bb51-4dfd-b4cb-aeaf54aba7ab?origin=SearchResults&p=1", "gold": "A", "note": "Explicit automation delivery partner procurement (intent A; fit poor if £215k)."},
     {"url": "https://www.contractsfinder.service.gov.uk/notice/782259da-cdc7-4361-b817-a64a16e40a58", "gold": "UNCLEAR", "note": "'Automation Contract' could be building/industrial automation."},
-    {"url": "https://www.find-tender.service.gov.uk/Notice/043057-2026", "gold": "D", "note": "AI in general; no automation-services scope."},
+    {"url": "https://www.find-tender.service.gov.uk/Notice/043057-2026", "gold": "UNCLEAR", "note": "Relabelled 2026-11-05 (was D): AI development/implementation is now in Solvant's scope, and the title alone cannot tell whether the tender buys an AI product or implementation services."},
     {"url": "https://www.find-tender.service.gov.uk/Notice/070458-2025/PDF", "gold": "REJECT", "note": "Physical/industrial automation."},
     {"url": "https://www.contractsfinder.service.gov.uk/Notice/2611f2ed-01e3-4348-8344-fe7f6e59672b", "gold": "REJECT", "note": "Robotics research."}
   ],

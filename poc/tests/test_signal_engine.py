@@ -35,6 +35,13 @@ class TextUtilTests(unittest.TestCase):
         self.assertNotIn("7700", out)
         self.assertIn("£1,500", out)  # money must survive redaction
 
+    def test_named_contact_redacted(self):
+        out = redact_pii("Contact: Jane Smith, Procurement Officer. Attn Mr John Doe. Workflow automation for Contact Centre teams.")
+        self.assertNotIn("Jane Smith", out)
+        self.assertNotIn("John Doe", out)
+        self.assertIn("Procurement Officer", out)
+        self.assertIn("Contact Centre teams", out)  # not a person
+
     def test_excerpt_strips_html_and_caps_length(self):
         ex = make_excerpt("<p>" + "word " * 500 + "</p>")
         self.assertNotIn("<p>", ex)
@@ -90,7 +97,7 @@ class OcdsParserTests(unittest.TestCase):
     def test_open_small_tender_is_tier_a(self):
         c = classify(self.sigs[0], now=NOW)
         self.assertEqual((c.intent_tier, c.actionable, c.freshness), ("A", "A", "fresh"))
-        self.assertIn("Invoice", c.suggested_service)
+        self.assertIn("invoicing", c.suggested_service)
 
     def test_physical_automation_rejected(self):
         c = classify(self.sigs[1], now=NOW)
@@ -100,7 +107,9 @@ class OcdsParserTests(unittest.TestCase):
         c = classify(self.sigs[2], now=NOW)
         self.assertEqual(c.freshness, "closed")
         self.assertEqual(c.actionable, "REJECT")
-        self.assertIn("value_far_above_ticket_size", c.fit_flags)
+        # Size is informational: flagged for a delivery partner, never a reason by itself.
+        self.assertIn("large_project_may_need_delivery_partner", c.flags)
+        self.assertTrue(c.partnership_opportunity)
 
     def test_fts_url_mapping(self):
         r = {"id": "ocds-h6vhtk-012345-090524-2026", "tender": {}}
@@ -116,7 +125,7 @@ class DiscourseParserTests(unittest.TestCase):
         self.assertNotIn("someone@example.invalid", s.text)
         c = classify(s, now=NOW)
         self.assertEqual(c.intent_tier, "A")
-        self.assertEqual(c.country, "UK")
+        self.assertEqual((c.market, c.country), ("UK", "United Kingdom"))
         matched = {e.feature for e in c.evidence}
         self.assertTrue({"looking_for_provider", "money_amount"} <= matched)
 

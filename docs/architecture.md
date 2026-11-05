@@ -1,5 +1,7 @@
 # Target architecture (Phase 2+)
 
+> **Business rules updated 2026-11-05:** markets are now UK, UAE and all of Europe, and there is **no budget minimum or maximum**. Statements below about the £1–3k range or UK/UAE-only scope are historical. Current rules: [live-validation.md](live-validation.md).
+
 Status: **proposal**. Nothing in this document is built or deployed. No database changes were made in Phase 1.
 
 ## Overview

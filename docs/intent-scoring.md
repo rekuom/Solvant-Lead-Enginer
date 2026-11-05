@@ -29,8 +29,8 @@ Implementation: [`poc/signal_engine/classify.py`](../poc/signal_engine/classify.
 | posted more than 90 days ago | `REJECT (outdated)` |
 | posted 31–90 days ago | downgrade one tier |
 | posting date unknown | cap at C |
-| value above £10k (rough FX conversion) | cap at C. Flag `value_far_above_ticket_size` |
-| country not UK/UAE | flag `geography_unconfirmed` (no automatic downgrade; Phase 2 decides) |
+| any value or budget | **no effect on tier.** Recorded as information; ≥ £100k equivalent sets `large_project_may_need_delivery_partner` and `partnership_opportunity` |
+| location | from place evidence only ([markets.py](../poc/signal_engine/markets.py)); unknown → `location_unknown_review`, explicit non-target → `outside_target_markets` (excluded at qualification) |
 
 ### Score (0–100)
 
@@ -38,7 +38,7 @@ Each tier has a base score and a cap (A 80–100, B 62–79, C 42–59, D 18–3
 
 ### Service suggestion
 
-Keyword-mapped to Solvant's standard £1–3k packages: invoice automation, platform migration, recruitment-pipeline, CRM integration, lead capture/booking, reporting, AI inbox, document extraction, RPA pilot and a discovery-sprint default. Prices are Solvant's own package ranges. They are **not** inferred from the source. Large tenders get an explicit "sub-contract or skip" note.
+Keyword-mapped service names: finance and invoicing automation, document processing, platform migration, recruitment pipeline, CRM integration, AI development and implementation, workflow builds on n8n / Make / Zapier / Power Automate, systems integration, lead capture, reporting, AI inbox and RPA. **No prices**: scope and budget are agreed per opportunity, at any size. Delivery complexity, delivery requirements and partnership need are separate informational flags. Queues and qualification: [live-validation.md](live-validation.md).
 
 ---
 
@@ -68,6 +68,8 @@ Full per-item reports: [`results_v0-baseline.md`](../poc/benchmark/results_v0-ba
 ### False-positive and error findings
 
 **Errors found in v0 and fixed with general rules (not item-specific patches):**
+
+> **v2 (2026-11-05, expanded scope):** 56/59 exact (95%), A/B precision 1.00, recall 0.95 ([results_v2.md](../poc/benchmark/results_v2.md)). One item, "Healthcare AI Solutions", was relabelled UNCLEAR because AI implementation is now in scope and its title can't tell product from services. Still development data, not independent proof.
 
 | Item (real) | v0 | Gold | Cause | Fix |
 |---|---|---|---|---|

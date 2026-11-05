@@ -1,46 +1,70 @@
-"""Phase 2A live-validation CLI. Run from poc/.
+"""Live-validation CLI. Run from poc/.
 
-  python3 -m signal_engine.validate probe                  # Task 1: access per domain/endpoint
-  python3 -m signal_engine.validate verify                 # Task 2: re-fetch the 36 Phase 1 candidates
-  python3 -m signal_engine.validate discover --days 30     # Task 2: new items from permitted sources
-  python3 -m signal_engine.validate report                 # Tasks 3–5: qualify, review table, funnel
+  python3 -m signal_engine.validate live --days 30 --max-records 100   # discover + verify + report (permitted sources only)
+  python3 -m signal_engine.validate probe                              # access probe (no collection)
+  python3 -m signal_engine.validate permissions                        # print the source-permission registry
+  python3 -m signal_engine.validate discover --days 30
+  python3 -m signal_engine.validate verify
+  python3 -m signal_engine.validate report
   python3 -m signal_engine.validate capture --url ... --title ... --excerpt ... --posted-at ... --reviewer ...
-  python3 -m signal_engine.validate all --days 30          # probe + verify + discover + report
 
-All output goes to poc/out/validation/ (git-ignored). Nothing is written to any database.
-Every fetch failure is logged with its kind (proxy_block vs source refusal etc.).
+Rules enforced here:
+  * A collector runs only if signal_engine/sources.py marks collection as permitted.
+  * Search-index candidates are re-fetched only from permitted sources; otherwise they stay UNVERIFIED.
+  * At most --max-records genuine records are kept (most actionable first); each source has a request cap.
+  * Output goes to poc/out/validation/ (git-ignored). Nothing is written to any database. No outreach.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import probe as probe_mod
+from . import sources
 from .classify import classify
-from .collectors import discourse, ocds, search_candidates
+from .collectors import discourse, ocds, search_candidates, ted
 from .collectors.http import FetchBlocked, PoliteClient
 from .dedupe import dedupe
 from .models import Signal
-from .qualify import qualify
+from .qualify import (EXCLUDED, PRIORITY_A, PRIORITY_B, PRIORITY_C, QUEUE_ORDER, UNVERIFIED, WATCHLIST, qualify)
 from .textutil import make_excerpt
 
 OUT = Path("out/validation")
 CANDIDATE_GLOB = "data/search_candidates_*.json"
 
-# Single-notice JSON endpoints for tenders are NOT confirmed by documentation; tried in order,
-# and whichever answers is recorded so the next run can rely on it.
 CF_SINGLE = ["https://www.contractsfinder.service.gov.uk/Published/Notice/OCDS/{guid}"]
 FTS_SINGLE = ["https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages/{nid}"]
 _GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 _FTS = re.compile(r"(\d{6}-\d{4})")
 _TOPIC_ID = re.compile(r"/t/(?:[^/]+/)?(\d+)")
+
+CSV_COLUMNS = [
+    "queue", "score", "intent_tier", "title", "organisation", "country", "market", "location_evidence",
+    "published_at", "age_days", "url", "business_requirement", "external_provider_evidence", "budget_stated",
+    "budget_kind", "budget_gbp_estimate", "availability", "availability_basis", "contact_route", "potential_service",
+    "complexity", "delivery_flags", "partnership_opportunity", "risk_flags", "missing_details", "reasons",
+    "classification_evidence", "source", "verification_status", "source_collection_permitted",
+]
+QUEUE_TITLES = {
+    PRIORITY_A: "Priority A — Immediate opportunities",
+    PRIORITY_B: "Priority B — Promising opportunities",
+    PRIORITY_C: "Priority C — Potential prospects",
+    WATCHLIST: "Watchlist — weak signals (lower priority)",
+    EXCLUDED: "Excluded",
+    UNVERIFIED: "Unverified — search-index titles (not counted)",
+}
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def load_candidates() -> list[Signal]:
@@ -48,10 +72,6 @@ def load_candidates() -> list[Signal]:
     for f in sorted(Path(".").glob(CANDIDATE_GLOB)):
         out += search_candidates.load(f)
     return out
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -65,11 +85,7 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.read_text().splitlines() if l.strip()] if path.exists() else []
 
 
-def _sig_from_dict(d: dict) -> Signal:
-    return Signal(**d)
-
-
-# --------------------------------------------------------------------------- probe
+# --------------------------------------------------------------------------- probe / permissions
 def cmd_probe(days: int, timeout: float = 30) -> list[dict]:
     since = (_now() - timedelta(days=days)).date().isoformat()
     results = probe_mod.run_probe(since, timeout=timeout)
@@ -81,9 +97,20 @@ def cmd_probe(days: int, timeout: float = 30) -> list[dict]:
     return rows
 
 
+def permissions_markdown() -> str:
+    L = ["| Source | Automated collection | Basis | Blocker | Checked |", "|---|---|---|---|---|"]
+    for p in sources.SOURCES.values():
+        L.append(f"| {p.name} (`{p.key}`) | {'**PERMITTED — enabled**' if p.collection_permitted else '**BLOCKED — disabled**'} | "
+                 f"{p.basis} | {p.blocker or '—'} | {p.checked_on} |")
+    return "\n".join(L) + "\n"
+
+
 # --------------------------------------------------------------------------- verify
 def verify_one(client: PoliteClient, cand: Signal) -> tuple[Optional[Signal], dict]:
     log = {"url": cand.url, "source": cand.source, "result": None, "kind": None, "endpoint": None}
+    if not sources.permitted(cand.source):
+        log.update(result="skipped", kind="permission_not_obtained", blocker=sources.policy(cand.source).blocker)
+        return None, log
     try:
         if cand.source.startswith("discourse:"):
             host = cand.source.split(":", 1)[1]
@@ -114,7 +141,7 @@ def verify_one(client: PoliteClient, cand: Signal) -> tuple[Optional[Signal], di
                 if "releases" not in pkg and "ocid" in pkg:
                     pkg = {"releases": [pkg]}
                 parsed = ocds.parse_release_package(pkg, cand.source)
-                sig = parsed[-1] if parsed else None  # latest release for the notice
+                sig = parsed[-1] if parsed else None
                 break
             if sig is None and last_exc is not None:
                 raise last_exc
@@ -142,34 +169,52 @@ def cmd_verify(client: Optional[PoliteClient] = None) -> tuple[list[Signal], lis
             verified.append(sig)
     _write_jsonl(OUT / "verify_log.jsonl", logs)
     _write_jsonl(OUT / "verified.jsonl", [s.to_dict() for s in verified])
-    print(f"verify: {len(verified)}/{len(cands)} verified; failures by kind: "
+    print(f"verify: {len(verified)}/{len(cands)} verified; not verified by kind: "
           f"{dict(Counter(l['kind'] for l in logs if l['result'] != 'verified'))}")
     return verified, logs
 
 
 # --------------------------------------------------------------------------- discover
-def cmd_discover(days: int, client: Optional[PoliteClient] = None, max_topics: int = 40) -> tuple[list[Signal], list[dict]]:
-    client = client or PoliteClient(min_interval_s=3.0)
-    since_dt = _now() - timedelta(days=days)
+def collector_plan(client: PoliteClient, since_dt: datetime, ted_log: list) -> dict[str, Callable[[], list[Signal]]]:
     since = since_dt.date().isoformat()
+    today = _now().date().isoformat()
+    plan: dict[str, Callable[[], list[Signal]]] = {
+        "contracts_finder": lambda: ocds.fetch_contracts_finder(
+            client, since, today, keywords=ocds.DEFAULT_KEYWORDS[: sources.policy("contracts_finder").max_requests_per_run]),
+        "find_a_tender": lambda: ocds.fetch_find_a_tender(
+            client, f"{since}T00:00:00", max_pages=sources.policy("find_a_tender").max_requests_per_run),
+        "ted": lambda: ted.fetch_ted(client, since_dt, limit=50, max_pages=sources.policy("ted").max_requests_per_run // 2 or 1,
+                                     log=ted_log),
+    }
+    for host in discourse.FORUMS:
+        plan[f"discourse:{host}"] = (lambda h=host: discourse.fetch_forum(client, h, max_topics=40, since=since_dt))
+    return plan
+
+
+def cmd_discover(days: int, client: Optional[PoliteClient] = None,
+                 plan: Optional[dict[str, Callable[[], list[Signal]]]] = None) -> tuple[list[Signal], list[dict]]:
+    client = client or PoliteClient(min_interval_s=2.0)
+    since_dt = _now() - timedelta(days=days)
+    ted_log: list = []
+    plan = plan if plan is not None else collector_plan(client, since_dt, ted_log)
     found: list[Signal] = []
     logs: list[dict] = []
-
-    def run(name, fn):
+    for key, fn in plan.items():
+        pol = sources.policy(key)
+        if not pol.collection_permitted:  # permission gate: never call the collector
+            logs.append({"source": key, "result": "skipped", "kind": "permission_not_obtained", "blocker": pol.blocker})
+            continue
         try:
             got = fn()
             found.extend(got)
-            logs.append({"source": name, "result": "ok", "items": len(got)})
+            logs.append({"source": key, "result": "ok", "items": len(got)})
         except FetchBlocked as exc:
-            logs.append({"source": name, "result": "failed", "kind": exc.kind, "error": str(exc)[:300]})
-
-    run("contracts_finder", lambda: ocds.fetch_contracts_finder(client, since, _now().date().isoformat()))
-    run("find_a_tender", lambda: ocds.fetch_find_a_tender(client, f"{since}T00:00:00"))
-    for host in discourse.FORUMS:
-        run(f"discourse:{host}", lambda h=host: discourse.fetch_forum(client, h, max_topics=max_topics, since=since_dt))
+            logs.append({"source": key, "result": "failed", "kind": exc.kind, "error": str(exc)[:300]})
+    if ted_log:
+        logs.append({"source": "ted", "detail": ted_log})
     _write_jsonl(OUT / "discover_log.jsonl", logs)
     _write_jsonl(OUT / "discovered.jsonl", [s.to_dict() for s in found])
-    print(f"discover: {len(found)} items; {logs}")
+    print("discover:", json.dumps([{k: v for k, v in l.items() if k != "detail"} for l in logs]))
     return found, logs
 
 
@@ -179,92 +224,117 @@ def cmd_capture(a: argparse.Namespace) -> dict:
                  verification_status="human_verified", posted_at=a.posted_at, collected_at=_now().isoformat(),
                  raw_meta={"kind": "human_capture", "reviewer": a.reviewer})
     path = OUT / "human_captures.jsonl"
-    rows = _read_jsonl(path) + [sig.to_dict()]
-    _write_jsonl(path, rows)
-    c = classify(sig)
-    q = qualify(sig, c)
-    print(json.dumps({"intent_tier": c.intent_tier, "qualification": q.qualification, "reasons": q.reasons}, indent=2))
+    _write_jsonl(path, _read_jsonl(path) + [sig.to_dict()])
+    q = qualify(sig, classify(sig))
+    print(json.dumps({"intent_tier": q.intent_tier, "queue": q.queue, "reasons": q.reasons, "missing": q.missing_details}, indent=2))
     return q.to_dict()
 
 
 # --------------------------------------------------------------------------- report
-ACTION = {
-    "QUALIFIED": "Contact via the source's permitted route within 48h",
-    "NEEDS_REVIEW": "Human check: open URL, confirm location/date/status, then decide",
-    "EXCLUDED": "Do not contact",
-}
+def _cell(v, n: int = 120) -> str:
+    if isinstance(v, list):
+        v = "; ".join(str(x) for x in v)
+    return str(v if v is not None else "").replace("|", "/").replace("\n", " ")[:n]
 
 
-def build_report(signals: list[Signal], now: Optional[datetime] = None, probe_rows: Optional[list[dict]] = None,
+def build_report(signals: list[Signal], now: Optional[datetime] = None, max_records: Optional[int] = None,
                  logs: Optional[dict] = None) -> tuple[list[dict], dict, str]:
     now = now or _now()
     kept, dropped = dedupe(signals)
-    recs = []
-    for s in kept:
-        c = classify(s, now=now)
-        q = qualify(s, c, now=now)
-        recs.append({**q.to_dict(), "score": c.score, "classifier_reasons": c.reasons})
+    recs = [qualify(s, classify(s, now=now), now=now).to_dict() for s in kept]
+    order = {q: i for i, q in enumerate(QUEUE_ORDER)}
+    recs.sort(key=lambda r: (order[r["queue"]], -r["score"], r["published_at"] if r["published_at"] != "unknown" else ""))
     genuine = [r for r in recs if r["verification_status"] in ("verified_api", "human_verified")]
-    fresh_ukuae = [r for r in genuine if r["age_days"] is not None and r["age_days"] <= 30 and r["country"] in ("UK", "UAE")]
-    seeking = [r for r in fresh_ukuae if r["intent_tier"] in ("A", "B")]
-    budget_ok = [r for r in seeking if r["budget_fit"] in ("fit", "stretch", "unknown") and r["deliverable"] != "no"]
-    contactable = [r for r in budget_ok if r["contact_permitted"] and r["availability"] != "closed"]
-    qualified = [r for r in recs if r["qualification"] == "QUALIFIED"]
-    high_intent = [r for r in genuine if r["intent_tier"] in ("A", "B")]
+    capped_out = []
+    if max_records is not None and len(genuine) > max_records:
+        keep_urls = {r["url"] for r in genuine[:max_records]}
+        capped_out = [r for r in genuine if r["url"] not in keep_urls]
+        recs = [r for r in recs if r["url"] in keep_urls or r["verification_status"] not in ("verified_api", "human_verified")]
+        genuine = [r for r in genuine if r["url"] in keep_urls]
+
+    recent_target = [r for r in genuine if r["age_days"] is not None and r["age_days"] <= 30 and r["market"] in ("UK", "UAE", "Europe")]
     funnel = {
         "run_at": now.isoformat(),
         "records_total": len(recs), "duplicates_dropped": len(dropped),
+        "genuine_records": len(genuine), "genuine_dropped_by_max_records_cap": len(capped_out),
         "by_verification": dict(Counter(r["verification_status"] for r in recs)),
-        "genuine_records": len(genuine),
-        "1_verified_uk_uae_last_30d": len(fresh_ukuae),
-        "2_seeking_external_provider": len(seeking),
-        "3_relevant_to_1k_3k": len(budget_ok),
-        "4_permitted_practical_contact_route": len(contactable),
-        "qualified": len(qualified),
-        "high_intent_genuine_reviewed": len(high_intent),
-        "by_qualification": dict(Counter(r["qualification"] for r in recs)),
-        "exclusion_reasons": dict(Counter(x for r in recs for x in r["reasons"])),
-        "false_positives": "requires human verdicts — see benchmark/heldout",
+        "by_queue": {q: sum(1 for r in recs if r["queue"] == q) for q in QUEUE_ORDER},
+        "genuine_by_market": dict(Counter(r["market"] for r in genuine)),
+        "genuine_by_source": dict(Counter(r["source"] for r in genuine)),
+        "verified_in_target_markets_last_30d": len(recent_target),
+        "verified_external_provider_demand": sum(1 for r in genuine if r["intent_tier"] in ("A", "B")),
+        "verified_with_permitted_contact_route": sum(1 for r in genuine if r["contact_permitted"] and r["queue"] in (PRIORITY_A, PRIORITY_B)),
+        "partnership_flagged": sum(1 for r in genuine if r["partnership_opportunity"]),
+        "false_positives": "not measurable without human verdicts — review Priority A/B and record verdicts in benchmark/heldout",
     }
-    md = ["# Phase 2A lead review", "", f"Run: {now.isoformat()}", "", "## Funnel", "", "| Step | Count |", "|---|---|"]
-    for k in ("records_total", "genuine_records", "1_verified_uk_uae_last_30d", "2_seeking_external_provider",
-              "3_relevant_to_1k_3k", "4_permitted_practical_contact_route", "qualified"):
+
+    md = ["# Solvant Signal Engine — live lead report", "",
+          f"Run: {now.isoformat()}  ·  verified records: **{len(genuine)}**  ·  "
+          f"Priority A: **{funnel['by_queue'][PRIORITY_A]}**  ·  B: **{funnel['by_queue'][PRIORITY_B]}**  ·  "
+          f"C: **{funnel['by_queue'][PRIORITY_C]}**", "",
+          "Budget and delivery complexity are informational only — no prospect is excluded for project size. "
+          "Personal contact details are never included; contact through the route the source provides.", "",
+          "## Funnel", "", "| Measure | Value |", "|---|---|"]
+    for k in ("records_total", "genuine_records", "genuine_dropped_by_max_records_cap", "verified_in_target_markets_last_30d",
+              "verified_external_provider_demand", "verified_with_permitted_contact_route", "partnership_flagged"):
         md.append(f"| {k} | {funnel[k]} |")
-    md += ["", "## High-intent items (Tier A/B, any verification status)", "",
-           "| Buyer / company | Country | Business problem | Date | Evidence URL | Intent tier | Commercial fit | Confidence | Recommended action |",
-           "|---|---|---|---|---|---|---|---|---|"]
-    for r in sorted(recs, key=lambda r: (-r["score"])):
-        if r["intent_tier"] not in ("A", "B"):
+    md.append(f"| by_queue | {json.dumps(funnel['by_queue'])} |")
+    md.append(f"| genuine_by_market | {json.dumps(funnel['genuine_by_market'])} |")
+    md.append(f"| genuine_by_source | {json.dumps(funnel['genuine_by_source'])} |")
+
+    for q in QUEUE_ORDER:
+        rows = [r for r in recs if r["queue"] == q]
+        md += ["", f"## {QUEUE_TITLES[q]} ({len(rows)})", ""]
+        if not rows:
+            md.append("_None._")
             continue
-        conf = "high" if r["verification_status"] in ("verified_api", "human_verified") and r["qualification"] == "QUALIFIED" \
-            else "medium" if r["verification_status"] in ("verified_api", "human_verified") else "low (title only)"
-        fit = f"{r['budget_fit']}; deliverable={r['deliverable']}; availability={r['availability']}"
-        problem = (r["buyer_request"] if not r["buyer_request"].startswith("unknown") else r["title"])[:110].replace("|", "/")
-        md.append(f"| {r['organisation']} | {r['country']} | {problem} | {r['published_at'][:10]} | {r['url']} | "
-                  f"{r['intent_tier']} | {fit} | {conf} | {ACTION[r['qualification']]}"
-                  f"{'' if r['qualification'] != 'EXCLUDED' else ' (' + '; '.join(r['reasons'])[:80] + ')'} |")
-    if probe_rows:
-        md += ["", "## Access probe summary", ""]
-        for row in probe_rows:
-            md.append(f"- {row['domain']} {row['name']}: **{row['kind']}** (status {row['status']}, blocked by {row['blocked_by']})")
+        if q in (EXCLUDED, UNVERIFIED):
+            md += ["| Title | Source | Reason | URL |", "|---|---|---|---|"]
+            for r in rows:
+                md.append(f"| {_cell(r['title'], 90)} | {r['source']} | {_cell(r['reasons'], 110)} | {r['url']} |")
+            continue
+        md += ["| Buyer / organisation | Country (evidence) | Business requirement | Published | Evidence URL | Tier | "
+               "Potential service | Budget (info) | Complexity / flags | Open? | Contact route | Missing |",
+               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in rows:
+            req = r["business_requirement"] if not r["business_requirement"].startswith("unknown") else r["title"]
+            flags = [r["complexity"]] + r["delivery_flags"] + (["partnership"] if r["partnership_opportunity"] else [])
+            md.append(f"| {_cell(r['organisation'], 60)} | {r['country']} ({_cell(r['location_evidence'], 50)}) | "
+                      f"{_cell(r['title'], 70)} — {_cell(req, 140)} | {r['published_at'][:10]} | {r['url']} | {r['intent_tier']} | "
+                      f"{_cell(r['potential_service'], 70)} | {_cell(r['budget_stated'], 50)} | {_cell(flags, 80)} | "
+                      f"{r['availability']} | {_cell(r['contact_route'], 70)} | {_cell(r['missing_details'], 80) or '—'} |")
+
+    md += ["", "## Source permissions", "", permissions_markdown()]
+    used = {r["source"] for r in genuine}
+    attributions = [sources.policy(k).attribution for k in sorted(used) if sources.policy(k).attribution]
+    if attributions:
+        md += ["## Attribution", ""] + [f"- {a}" for a in attributions]
     if logs:
-        md += ["", "## Fetch logs", "", "```", json.dumps(logs, indent=1, default=str)[:4000], "```"]
+        md += ["", "## Fetch logs", "", "```", json.dumps(logs, indent=1, default=str)[:6000], "```"]
     return recs, funnel, "\n".join(md) + "\n"
 
 
-def cmd_report(include_candidates: bool = True) -> dict:
-    signals = [_sig_from_dict(d) for d in _read_jsonl(OUT / "verified.jsonl")]
-    signals += [_sig_from_dict(d) for d in _read_jsonl(OUT / "discovered.jsonl")]
-    signals += [_sig_from_dict(d) for d in _read_jsonl(OUT / "human_captures.jsonl")]
-    verified_urls = {s.url for s in signals}
-    if include_candidates:  # unverified ones stay visible, but can never qualify
-        signals += [c for c in load_candidates() if c.url not in verified_urls]
-    probe_rows = json.loads((OUT / "probe.json").read_text()) if (OUT / "probe.json").exists() else None
+def write_csv(path: Path, recs: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+        w.writeheader()
+        for r in recs:
+            w.writerow({k: ("; ".join(map(str, r[k])) if isinstance(r.get(k), list) else r.get(k)) for k in CSV_COLUMNS})
+
+
+def cmd_report(max_records: Optional[int] = None) -> dict:
+    signals = [Signal(**d) for d in _read_jsonl(OUT / "verified.jsonl")]
+    signals += [Signal(**d) for d in _read_jsonl(OUT / "discovered.jsonl")]
+    signals += [Signal(**d) for d in _read_jsonl(OUT / "human_captures.jsonl")]
+    seen = {s.url for s in signals}
+    signals += [c for c in load_candidates() if c.url not in seen]  # visible, never counted
     logs = {"verify": _read_jsonl(OUT / "verify_log.jsonl"), "discover": _read_jsonl(OUT / "discover_log.jsonl")}
-    recs, funnel, md = build_report(signals, probe_rows=probe_rows, logs=logs)
+    recs, funnel, md = build_report(signals, max_records=max_records, logs=logs)
     _write_jsonl(OUT / "leads.jsonl", recs)
+    write_csv(OUT / "lead_report.csv", recs)
     (OUT / "funnel.json").write_text(json.dumps(funnel, indent=2))
-    (OUT / "lead_review.md").write_text(md)
+    (OUT / "lead_report.md").write_text(md)
     print(json.dumps(funnel, indent=2))
     return funnel
 
@@ -272,12 +342,15 @@ def cmd_report(include_candidates: bool = True) -> dict:
 def main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("probe", "discover", "all"):
+    for name in ("probe", "discover", "live", "all"):
         sp = sub.add_parser(name)
         sp.add_argument("--days", type=int, default=30)
         sp.add_argument("--timeout", type=float, default=30, help="per-request timeout in seconds (probe)")
+        sp.add_argument("--max-records", type=int, default=100)
     sub.add_parser("verify")
-    sub.add_parser("report")
+    sub.add_parser("permissions")
+    rp = sub.add_parser("report")
+    rp.add_argument("--max-records", type=int, default=100)
     cp = sub.add_parser("capture")
     for f in ("url", "title", "excerpt", "posted-at", "reviewer"):
         cp.add_argument(f"--{f}", required=True)
@@ -285,19 +358,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     a = p.parse_args(argv)
     if a.cmd == "probe":
         cmd_probe(a.days, a.timeout)
+    elif a.cmd == "permissions":
+        print(permissions_markdown())
     elif a.cmd == "verify":
         cmd_verify()
     elif a.cmd == "discover":
         cmd_discover(a.days)
     elif a.cmd == "report":
-        cmd_report()
+        cmd_report(a.max_records)
     elif a.cmd == "capture":
         cmd_capture(a)
-    elif a.cmd == "all":
-        cmd_probe(a.days, a.timeout)
-        cmd_verify()
+    elif a.cmd in ("live", "all"):
+        if a.cmd == "all":
+            cmd_probe(a.days, a.timeout)
         cmd_discover(a.days)
-        cmd_report()
+        cmd_verify()
+        cmd_report(a.max_records)
     return 0
 
 

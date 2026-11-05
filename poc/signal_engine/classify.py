@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from . import markets
 from .models import Signal
 
 TIERS = ("A", "B", "C", "D", "REJECT")
@@ -77,10 +78,13 @@ EXTERNAL_HELP = [
 SCOPE = [
     ("automation", _rx(r"\bautomat\w*\b")),
     ("workflow", _rx(r"\bworkflows?\b")),
-    ("platform", _rx(r"\bzapier\b|\bmake\.com\b|\bmake\s+(?:expert|professional|pro|scenario)s?\b|\bn8n\b|\bpower\s+automate\b|\blow[\s-]?code\b|\bno[\s-]?code\b")),
+    ("platform", _rx(r"\bzapier\b|\bmake\.com\b|\bmake\s+(?:expert|professional|pro|scenario)s?\b|\bn8n\b|\bpower\s+automate\b|\bpower\s+platform\b|\blow[\s-]?code\b|\bno[\s-]?code\b")),
+    ("ai_development", _rx(r"\bai\s+(?:development|implementation|solutions?|services|integration|assistants?|models?|platform|tools?|use\s+cases?)\b|\bartificial\s+intelligence\b|\bmachine\s+learning\b|\bgenerative\s+ai\b|\bgen\s?ai\b|\bllms?\b|\blarge\s+language\s+models?\b|\bnatural\s+language\s+processing\b|\bcopilot\b")),
+    ("document_processing", _rx(r"\bdocument\s+(?:processing|automation|capture|extraction|management)\b|\bdata\s+extraction\b|\bocr\b|\bintelligent\s+document\b|\bidp\b|\bscanning\s+and\s+indexing\b")),
+    ("systems_integration", _rx(r"\bsystems?\s+integration\b|\berp\b|\bsoftware\s+integration\b|\bintegration\s+(?:services|platform|layer)\b|\bmiddleware\b|\bipaas\b")),
     ("integration", _rx(r"\bintegrat\w*\b|\bconnect(?:ing)?\s+(?:our|my|the)?\s*\w*\s*(?:crm|systems?|apis?|tools?)\b|\bapi\b|\bwebhooks?\b")),
     ("crm", _rx(r"\bcrm\b|\bhubspot\b|\bsalesforce\b|\bpipedrive\b|\bzoho\b|\bgohighlevel\b|\bghl\b")),
-    ("finance_ops", _rx(r"\binvoic\w*\b|\bbookkeeping\b|\bxero\b|\bquickbooks\b|\bsage\b|\breconcil\w*\b")),
+    ("finance_ops", _rx(r"\binvoic\w*\b|\bbookkeeping\b|\bxero\b|\bquickbooks\b|\bsage\b|\breconcil\w*\b|\baccounts?\s+(?:payable|receivable)\b|\baccounting\s+automation\b|\bfinance\s+automation\b|\bexpense\s+management\b|\bpurchase[\s-]to[\s-]pay\b|\bp2p\b")),
     ("reporting", _rx(r"\breporting\b|\breports?\b|\bdashboards?\b")),
     ("ai_agent", _rx(r"\bai\s+agents?\b|\bchat\s?bots?\b|\brpa\b|\brobotic\s+process\b|\bintelligent\s+automation\b|\bopenai\b|\bllm\b")),
     ("data_ops", _rx(r"\bspreadsheets?\b|\bdata\s+entry\b|\bexcel\b|\bgoogle\s+sheets\b")),
@@ -112,44 +116,61 @@ PROBLEM = [
     ("pain", _rx(r"\bstruggl\w*\b|\bnightmare\b|\bbottleneck\b|\bfrustrat\w*\b|\bdrowning\b|\bmess\b")),
 ]
 
-GEO = {
-    "UK": _rx(r"\b(?:uk|u\.k\.|united\s+kingdom|england|scotland|wales|northern\s+ireland|london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool)\b"),  # places only: currency is not location
-    "UAE": _rx(r"\b(?:uae|u\.a\.e\.|dubai|abu\s+dhabi|sharjah|ajman|emirates)\b"),
-}
 
 # ---------------------------------------------------------------------------
-# Service suggestions (first match wins). Price ranges are Solvant's standard
-# packages, not inferred from the source.
+# Service suggestions (first match wins). Names only: no price is assumed —
+# scope and budget are agreed per opportunity, at any size.
 # ---------------------------------------------------------------------------
 SERVICES = [
-    (_rx(r"\binvoic|\bxero\b|\bquickbooks\b|\bbookkeeping\b|\breconcil"),
-     "Invoice & payment-reminder automation (accounting system + email)", "£1,200–£2,000"),
+    (_rx(r"\binvoic|\bxero\b|\bquickbooks\b|\bbookkeeping\b|\breconcil|\baccounts?\s+(?:payable|receivable)\b|\bpurchase[\s-]to[\s-]pay\b|\bexpense"),
+     "Finance & invoicing automation (accounting system integration, AP/AR workflows)"),
+    (_rx(r"\bdocument\s+(?:processing|automation|capture|extraction)|\bdata\s+extraction\b|\bocr\b|\bidp\b|\bintelligent\s+document"),
+     "Document processing & data extraction (AI OCR, validation, system-of-record sync)"),
     (_rx(r"\bmigrat\w*\b|\bzapier\b.*\b(?:to|->)\b.*\b(?:make|n8n)\b"),
-     "Automation platform migration and hardening (error paths, retries, monitoring)", "£1,000–£2,500"),
+     "Automation platform migration and hardening (error paths, retries, monitoring)"),
     (_rx(r"\bats\b|\brecruit\w*\s+automation\b|\bcandidate\b"),
-     "Recruitment pipeline automation (ATS sync, matching, outreach sequences)", "£1,500–£3,000"),
-    (_rx(r"\bcrm\b|\bhubspot\b|\bsalesforce\b|\bpipedrive\b|\bcopper\b|\bzoho\b|\bghl\b|\bgohighlevel\b"),
-     "CRM integration & lead routing between existing systems", "£1,500–£3,000"),
+     "Recruitment pipeline automation (ATS sync, matching, outreach sequences)"),
+    (_rx(r"\bcrm\b|\bhubspot\b|\bsalesforce\b|\bpipedrive\b|\bcopper\b|\bzoho\b|\bghl\b|\bgohighlevel\b|\bdynamics\b"),
+     "CRM integration & automation (lead routing, data sync between systems)"),
+    (_rx(r"\bai\s+agents?\b|\bagentic\b|\bllms?\b|\bgenerative\s+ai\b|\bartificial\s+intelligence\b|\bmachine\s+learning\b|\bai\s+(?:development|implementation|solutions?|assistants?|models?)\b"),
+     "AI development & implementation (agents, assistants, LLM integration)"),
+    (_rx(r"\bpower\s+automate\b|\bpower\s+platform\b|\bn8n\b|\bmake\.com\b|\bmake\s+expert\b|\bzapier\b"),
+     "Workflow automation build on the client's platform (n8n / Make / Zapier / Power Automate)"),
+    (_rx(r"\berp\b|\bsystems?\s+integration\b|\bsoftware\s+integration\b|\bmiddleware\b|\bapi\b"),
+     "Systems & software integration (APIs, middleware, ERP connectors)"),
     (_rx(r"\blead\b|\bbooking\b|\bappointment\b"),
-     "Lead capture, qualification & booking workflow", "£1,200–£2,500"),
+     "Lead capture, qualification & booking workflow"),
     (_rx(r"\breport\w*\b|\bdashboard"),
-     "Automated reporting pipeline (data pull, transform, scheduled report)", "£1,000–£2,500"),
+     "Automated reporting pipeline (data pull, transform, scheduled report)"),
     (_rx(r"\bchat\s?bot|\bsupport\b|\binbox\b|\bemail\b|\bsms\b"),
-     "AI inbox / customer-message triage assistant", "£1,500–£3,000"),
-    (_rx(r"\bdocument|\bpdf\b|\bocr\b|\bdata\s+entry\b"),
-     "Document extraction into your system of record (AI OCR + validation)", "£1,500–£3,000"),
+     "AI inbox / customer-message triage assistant"),
     (_rx(r"\brpa\b|\brobotic\s+process\b|\bintelligent\s+automation\b"),
-     "RPA / intelligent-automation pilot for one process", "£2,000–£3,000 (pilot only)"),
+     "RPA / intelligent automation (process discovery, bots, orchestration)"),
 ]
-DEFAULT_SERVICE = ("Automation discovery sprint + first production workflow", "£1,000–£1,500")
+DEFAULT_SERVICE = "Business process automation (discovery, build, handover)"
+
+# Informational delivery flags. They NEVER exclude a prospect.
+LARGE_PROJECT_GBP = 100_000  # at or above: flag that a delivery partner / extra resources may be needed
+COMPLEXITY_HIGH = _rx(r"\berp\b|\bsap\b|\boracle\b|\bdynamics\s*365\b|\bmulti[\s-]?(?:system|site|country|entity)\b|"
+                      r"\benterprise[\s-]wide\b|\blegacy\b|\bmigration\b|\bmachine\s+learning\b|\bcomputer\s+vision\b|"
+                      r"\bai\s+agents?\b|\bagentic\b|\bdata\s+platform\b|\bcentre\s+of\s+excellence\b|\bcenter\s+of\s+excellence\b")
+DELIVERY_REQUIREMENTS = [
+    ("security_clearance", _rx(r"\bsecurity\s+clearance\b|\bsc\s+clear\w*\b|\bbpss\b|\bnppv\b|\bdv\s+clear\w*\b")),
+    ("certification", _rx(r"\biso\s?27001\b|\bcyber\s+essentials\b|\bsoc\s?2\b|\biso\s?9001\b")),
+    ("on_site", _rx(r"\bon[\s-]?site\b|\bon\s+premises\b")),
+    ("language", _rx(r"\b(?:fluent|native)\s+(?:french|german|spanish|italian|dutch|arabic|polish|portuguese)\b|\bin\s+(?:french|german|spanish|italian|dutch|arabic)\b")),
+    ("framework_or_dps", _rx(r"\bframework\s+agreement\b|\bdynamic\s+purchasing\s+system\b|\bg-cloud\b|\bdps\b")),
+    ("insurance", _rx(r"\bprofessional\s+indemnity\b|\binsurance\s+cover\b")),
+    ("named_platform", _rx(r"\bblue\s?prism\b|\buipath\b|\bautomation\s+anywhere\b|\bservicenow\b|\bsalesforce\b|\bsap\b")),
+]
+PARTNERSHIP = _rx(r"\bdelivery\s+partner\b|\bimplementation\s+partner\b|\bconsortium\b|\bsub-?contract\w*\b|\bprime\s+contractor\b|\bfor\s+(?:our|my)\s+clients\b|\bwhite[\s-]?label\b")
+
 
 TIER_BASE = {"A": 80, "B": 62, "C": 42, "D": 18, "REJECT": 0}
 TIER_CAP = {"A": 100, "B": 79, "C": 59, "D": 34, "REJECT": 0}
 
 FRESH_DAYS = 30
 STALE_DAYS = 90
-TICKET_CEILING_GBP = 3000
-TICKET_STRETCH_GBP = 10000  # above this, Solvant can only bid a pilot / sub-lot
 
 
 @dataclass
@@ -169,9 +190,13 @@ class Classification:
     evidence: list[Evidence] = field(default_factory=list)
     reject_reason: Optional[str] = None
     suggested_service: Optional[str] = None
-    suggested_price: Optional[str] = None
-    fit_flags: list[str] = field(default_factory=list)
-    country: Optional[str] = None
+    flags: list[str] = field(default_factory=list)        # informational only, never exclusionary
+    country: Optional[str] = None                          # country name or "unknown" / "other:<x>"
+    market: str = "unknown"                                # UK / UAE / Europe / other / unknown
+    location_evidence: str = "unknown"
+    complexity: str = "unknown"                            # low / medium / high
+    delivery_flags: list[str] = field(default_factory=list)
+    partnership_opportunity: bool = False
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -218,7 +243,8 @@ def freshness_of(sig: Signal, now: datetime) -> str:
 def _gbp(amount: Optional[float], currency: Optional[str]) -> Optional[float]:
     if amount is None:
         return None
-    rates = {"GBP": 1.0, "USD": 0.78, "EUR": 0.85, "AED": 0.21}  # rough, for fit banding only
+    rates = {"GBP": 1.0, "USD": 0.78, "EUR": 0.85, "AED": 0.21, "CHF": 0.88, "NOK": 0.072, "SEK": 0.073, "DKK": 0.114,
+             "PLN": 0.19, "CZK": 0.034}  # rough, for informational size banding only
     return amount * rates.get((currency or "GBP").upper(), 1.0)
 
 
@@ -321,33 +347,44 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
         score += 3 * max(0, len(hits["external_help"]) - 1)
         score = max(TIER_BASE[tier], min(TIER_CAP[tier], score))
 
-    # --- fit ------------------------------------------------------------------
-    fit: list[str] = []
-    country = sig.country_hint
-    if not country:
-        for c, rx in GEO.items():
-            if rx.search(text):
-                country = c
-                break
-    if country not in ("UK", "UAE"):
-        fit.append("geography_unconfirmed")
+    # --- location (place evidence only; never currency) ------------------------
+    loc = locate(sig, text)
+
+    # --- informational delivery assessment (never exclusionary) -----------------
+    flags: list[str] = []
     gbp = _gbp(sig.value_amount, sig.value_currency)
-    if gbp is not None:
-        if gbp > TICKET_STRETCH_GBP:
-            fit.append("value_far_above_ticket_size")
-        elif gbp > TICKET_CEILING_GBP:
-            fit.append("value_above_ticket_size")
+    delivery = [name for name, rx in DELIVERY_REQUIREMENTS if rx.search(text)]
+    if is_tender:
+        delivery.append("formal_bid_required")
+    high = COMPLEXITY_HIGH.search(text)
+    if high or (gbp is not None and gbp >= LARGE_PROJECT_GBP):
+        complexity = "high"
+    elif len(hits["scope"]) >= 3 or is_tender:
+        complexity = "medium"
+    elif hits["scope"]:
+        complexity = "low"
+    else:
+        complexity = "unknown"
+    partnership = bool(PARTNERSHIP.search(text)) or (gbp is not None and gbp >= LARGE_PROJECT_GBP) \
+        or "framework_or_dps" in delivery or (product_tender and tier != "REJECT")
+    if gbp is not None and gbp >= LARGE_PROJECT_GBP:
+        flags.append("large_project_may_need_delivery_partner")
+    if product_tender and tier != "REJECT":
+        flags.append("product_procurement_implementation_partner_possible")
+    if loc.market == "unknown":
+        flags.append("location_unknown_review")
+    elif loc.market == "other":
+        flags.append("outside_target_markets")
+    flags += [f"location_{f}" for f in loc.flags]
 
     # --- service --------------------------------------------------------------
-    service, price = None, None
+    service = None
     if tier in ("A", "B", "C"):
-        service, price = DEFAULT_SERVICE
-        for rx, name, p in SERVICES:
+        service = DEFAULT_SERVICE
+        for rx, name in SERVICES:
             if rx.search(text):
-                service, price = name, p
+                service = name
                 break
-        if "value_far_above_ticket_size" in fit:
-            price = f"{price} — tender far exceeds standard packages; bid only as sub-contractor or skip"
 
     # --- actionable decision ----------------------------------------------------
     fresh = freshness_of(sig, now)
@@ -369,9 +406,6 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
     elif fresh == "unknown":
         actionable = "C" if tier in ("A", "B") else tier
         reasons.append("Posting date unknown: capped at Tier C until confirmed.")
-    if "value_far_above_ticket_size" in fit and actionable in ("A", "B"):
-        actionable = "C"
-        reasons.append("Contract value far exceeds Solvant's £1k–£3k packages: capped at Tier C.")
 
     return Classification(
         intent_tier=tier,
@@ -382,7 +416,23 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
         evidence=evidence,
         reject_reason=reject_reason,
         suggested_service=service,
-        suggested_price=price,
-        fit_flags=fit,
-        country=country,
+        flags=flags,
+        country=loc.country,
+        market=loc.market,
+        location_evidence=loc.evidence,
+        complexity=complexity,
+        delivery_flags=delivery,
+        partnership_opportunity=partnership,
     )
+
+
+def locate(sig: Signal, text: Optional[str] = None) -> "markets.Location":
+    """Structured country code from the source first, then the source's own country hint, then text."""
+    code = (sig.raw_meta or {}).get("buyer_country_code")
+    if code:
+        return markets.from_code(code, "buyer country code on the notice")
+    if sig.country_hint:
+        loc = markets.from_code(sig.country_hint, "source jurisdiction")
+        if loc.market != "other":
+            return loc
+    return markets.detect(text if text is not None else f"{sig.title}\n{sig.text}")

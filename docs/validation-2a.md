@@ -1,5 +1,7 @@
 # Phase 2A — live source validation
 
+> **Business rules updated 2026-11-05:** markets are now UK, UAE and all of Europe, and there is **no budget minimum or maximum**. Statements below about the £1–3k range or UK/UAE-only scope are historical. Current rules: [live-validation.md](live-validation.md).
+
 Run date: 2026-11-05 (≈10:08–10:16 UTC) · Branch `claude/trusting-hawking-kqus6b`
 Raw evidence from this run: [`docs/evidence/phase-2a/`](evidence/phase-2a/) (probe, verify and discover logs, funnel, lead review).
 

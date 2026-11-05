@@ -1,5 +1,7 @@
 # Data sources — access, legality, coverage, cost
 
+> **Business rules updated 2026-11-05:** markets are now UK, UAE and all of Europe, and there is **no budget minimum or maximum**. Statements below about the £1–3k range or UK/UAE-only scope are historical. Current rules: [live-validation.md](live-validation.md).
+
 Phase 1 research, 2026-11-05. **Read the evidence column before relying on any row.**
 
 ## How each claim was established
@@ -49,6 +51,12 @@ No source was retrieved directly in Phase 1. Every host we tried was denied by t
 **T4 — Community job boards are dominated by vendors.** In the 36 real results we reviewed, 16 were vendors, recruitment or unrelated, and only about 14 were plausible buyer requests (see [intent-scoring.md](intent-scoring.md)). The UK/UAE share was small. The only UAE-linked item turned out to be an employment role.
 
 **T5 — Data protection.** Forum handles and post text are personal data under UK GDPR and the UAE PDPL. A legitimate-interests assessment (LIA) is needed before storing them. Store the minimum (URL, excerpt, handle). Delete when the source is deleted. Honour objections. See [architecture.md](architecture.md#privacy-and-data-minimisation).
+
+## Added 2026-11-05: EU TED
+
+**EU Tenders Electronic Daily (TED Search API v3):** `POST https://api.ted.europa.eu/v3/notices/search`. Anonymous access for published notices. Commercial reuse is allowed with credit ([legal notice](https://ted.europa.eu/en/legal-notice), [API docs](https://docs.ted.europa.eu/api/latest/search.html)). Covers EU/EEA public procurement. **Enabled** as a permitted collector. Field names are confirmed on the first live run.
+
+Current permission status for every collector: [live-validation.md](live-validation.md#source-permissions-automated-collection).
 
 ## Recommended source portfolio for Phase 2
 

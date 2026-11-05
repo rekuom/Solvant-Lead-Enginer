@@ -1,0 +1,138 @@
+name: Live lead validation
+
+# Manual-only. Collects recent opportunities from sources whose terms PERMIT automated
+# collection (see poc/signal_engine/sources.py), classifies and qualifies them, and uploads
+# CSV + Markdown reports. No Supabase, no paid APIs, no credentials, no outreach, no schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Look-back window in days (1–90)"
+        required: false
+        default: "30"
+      max_records:
+        description: "Maximum verified records to keep (1–200)"
+        required: false
+        default: "100"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-lead-validation
+  cancel-in-progress: false
+
+jobs:
+  live-validation:
+    name: Collect (permitted sources) → qualify → report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate inputs
+        id: inputs
+        env:
+          IN_DAYS: ${{ inputs.days }}
+          IN_MAX: ${{ inputs.max_records }}
+        run: |
+          days="${IN_DAYS:-30}"; max="${IN_MAX:-100}"
+          [[ "$days" =~ ^[0-9]+$ ]] || { echo "days must be a whole number"; exit 1; }
+          [[ "$max" =~ ^[0-9]+$ ]] || { echo "max_records must be a whole number"; exit 1; }
+          (( days >= 1 && days <= 90 )) || { echo "days must be 1–90"; exit 1; }
+          (( max >= 1 && max <= 200 )) || { echo "max_records must be 1–200"; exit 1; }
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          echo "max=$max" >> "$GITHUB_OUTPUT"
+          echo "Look-back: $days days · max verified records: $max"
+
+      - name: "1) Unit tests (must pass before any collection)"
+        working-directory: poc
+        run: python -m unittest discover -s tests -v
+
+      - name: "2) Source permissions (only PERMITTED collectors will run)"
+        working-directory: poc
+        run: |
+          python -m signal_engine.validate permissions | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: "3) Archive forum terms pages for human permission review (no collection)"
+        continue-on-error: true
+        run: |
+          mkdir -p permission-review
+          for u in https://community.n8n.io/tos https://community.make.com/tos \
+                   https://community.n8n.io/robots.txt https://community.make.com/robots.txt; do
+            f="permission-review/$(echo "$u" | sed 's#https://##; s#[/]#_#g')"
+            code=$(curl -sS -L --max-time 20 -A "SolvantSignalEngine/0.1 (+https://solvant.io)" -o "$f" -w '%{http_code}' "$u" || echo "000")
+            echo "$u -> HTTP $code ($(wc -c < "$f" 2>/dev/null || echo 0) bytes)"
+          done
+
+      - name: "4) Live collection, verification and qualification"
+        working-directory: poc
+        env:
+          DAYS: ${{ steps.inputs.outputs.days }}
+          MAX: ${{ steps.inputs.outputs.max }}
+        run: |
+          python -m signal_engine.validate live --days "$DAYS" --max-records "$MAX"
+
+      - name: "5) Summary (titles, organisations and URLs only — no excerpts, no personal data)"
+        if: always()
+        working-directory: poc
+        run: |
+          python - <<'EOF' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          out = pathlib.Path("out/validation")
+          if not (out / "funnel.json").exists():
+              print("No report produced."); raise SystemExit(0)
+          f = json.loads((out / "funnel.json").read_text())
+          print("## Live lead validation\n")
+          print(f"- Verified records kept: **{f['genuine_records']}** (dropped by cap: {f['genuine_dropped_by_max_records_cap']})")
+          print(f"- Queues: `{json.dumps(f['by_queue'])}`")
+          print(f"- Verified by market: `{json.dumps(f['genuine_by_market'])}` · by source: `{json.dumps(f['genuine_by_source'])}`")
+          print(f"- Verified in target markets, last 30 days: **{f['verified_in_target_markets_last_30d']}**")
+          print(f"- Verified external-provider demand (Tier A/B): **{f['verified_external_provider_demand']}**")
+          print(f"- Priority A/B with a permitted contact route: **{f['verified_with_permitted_contact_route']}**\n")
+          rows = [json.loads(l) for l in (out / "leads.jsonl").read_text().splitlines() if l.strip()]
+          for queue, title in (("PRIORITY_A", "Priority A"), ("PRIORITY_B", "Priority B")):
+              sel = [r for r in rows if r["queue"] == queue]
+              print(f"### {title} ({len(sel)})\n")
+              if not sel:
+                  print("_None._\n"); continue
+              print("| Organisation | Country | Title | Published | Tier | Service | URL |\n|---|---|---|---|---|---|---|")
+              for r in sel[:50]:
+                  t = r["title"].replace("|", "/")[:90]
+                  o = r["organisation"].replace("|", "/")[:50]
+                  print(f"| {o} | {r['country']} | {t} | {r['published_at'][:10]} | {r['intent_tier']} | {r['potential_service'][:50]} | {r['url']} |")
+              print()
+          log = [json.loads(l) for l in (out / "discover_log.jsonl").read_text().splitlines() if l.strip()]
+          print("### Collector results\n")
+          for l in log:
+              if "detail" in l:
+                  continue
+              print(f"- `{l['source']}`: {l['result']}" + (f" — {l.get('items')} items" if l.get('items') is not None else "")
+                    + (f" — {l.get('kind')}" if l.get('kind') else ""))
+          EOF
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-lead-report-${{ github.run_id }}
+          path: |
+            poc/out/validation/lead_report.csv
+            poc/out/validation/lead_report.md
+            poc/out/validation/funnel.json
+            poc/out/validation/leads.jsonl
+            poc/out/validation/discover_log.jsonl
+            poc/out/validation/verify_log.jsonl
+            permission-review/
+          retention-days: 14
+          if-no-files-found: warn
