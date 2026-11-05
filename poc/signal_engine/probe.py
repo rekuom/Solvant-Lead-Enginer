@@ -92,14 +92,14 @@ _SIDE = {"proxy_block": "our_network_policy", "dns_blocked": "our_network_policy
 
 
 def probe_url(domain: str, ep: dict[str, Any], since: str, today: str, ua: str = DEFAULT_UA,
-              open_fn: Optional[Callable[[str, str, float], Any]] = None) -> ProbeResult:
+              open_fn: Optional[Callable[[str, str, float], Any]] = None, timeout: float = 30) -> ProbeResult:
     url = ep["url"].format(since=since, today=today)
     open_fn = open_fn or _default_open
     t0 = time.monotonic()
     res = ProbeResult(domain=domain, name=ep["name"], url=url, endpoint_confirmed_by_docs=ep["confirmed"],
                       ok=False, kind="other", blocked_by="unknown")
     try:
-        resp, chain = open_fn(url, ua, 30)
+        resp, chain = open_fn(url, ua, timeout)
         with resp:
             body = resp.read()
             res.status = getattr(resp, "status", None) or resp.getcode()
@@ -130,12 +130,12 @@ def probe_url(domain: str, ep: dict[str, Any], since: str, today: str, ua: str =
     return res
 
 
-def run_probe(since: str, open_fn=None, pause_s: float = 1.0, sleep=time.sleep) -> list[ProbeResult]:
+def run_probe(since: str, open_fn=None, pause_s: float = 1.0, sleep=time.sleep, timeout: float = 30) -> list[ProbeResult]:
     today = datetime.now(timezone.utc).date().isoformat()
     out: list[ProbeResult] = []
     for domain, eps in ENDPOINTS.items():
         for ep in eps:
-            out.append(probe_url(domain, ep, since, today, open_fn=open_fn))
+            out.append(probe_url(domain, ep, since, today, open_fn=open_fn, timeout=timeout))
             sleep(pause_s)
     return out
 

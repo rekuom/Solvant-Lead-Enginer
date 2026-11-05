@@ -70,9 +70,9 @@ def _sig_from_dict(d: dict) -> Signal:
 
 
 # --------------------------------------------------------------------------- probe
-def cmd_probe(days: int) -> list[dict]:
+def cmd_probe(days: int, timeout: float = 30) -> list[dict]:
     since = (_now() - timedelta(days=days)).date().isoformat()
-    results = probe_mod.run_probe(since)
+    results = probe_mod.run_probe(since, timeout=timeout)
     rows = probe_mod.results_to_json(results)
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "probe.json").write_text(json.dumps(rows, indent=2))
@@ -275,6 +275,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     for name in ("probe", "discover", "all"):
         sp = sub.add_parser(name)
         sp.add_argument("--days", type=int, default=30)
+        sp.add_argument("--timeout", type=float, default=30, help="per-request timeout in seconds (probe)")
     sub.add_parser("verify")
     sub.add_parser("report")
     cp = sub.add_parser("capture")
@@ -283,7 +284,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     cp.add_argument("--source", default="human:other")
     a = p.parse_args(argv)
     if a.cmd == "probe":
-        cmd_probe(a.days)
+        cmd_probe(a.days, a.timeout)
     elif a.cmd == "verify":
         cmd_verify()
     elif a.cmd == "discover":
@@ -293,7 +294,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     elif a.cmd == "capture":
         cmd_capture(a)
     elif a.cmd == "all":
-        cmd_probe(a.days)
+        cmd_probe(a.days, a.timeout)
         cmd_verify()
         cmd_discover(a.days)
         cmd_report()

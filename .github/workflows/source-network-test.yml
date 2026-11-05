@@ -1,0 +1,85 @@
+name: Source network test
+
+# Manual-only diagnostic: can a GitHub-hosted runner reach the Phase 2A source domains?
+# Makes a handful of single requests per domain (no crawling, no collection, no outreach).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-network-test
+  cancel-in-progress: false
+
+jobs:
+  network-test:
+    name: Probe source domains + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Runner context (no secrets)
+        run: |
+          echo "runner os: ${RUNNER_OS}  arch: ${RUNNER_ARCH}"
+          python --version
+          curl --version | head -1
+          echo "commit: ${GITHUB_SHA}"
+
+      - name: "1) DNS + HTTPS reachability (curl, one GET per URL)"
+        timeout-minutes: 2
+        run: |
+          bash .github/scripts/source_network_check.sh network-check
+          cat network-check/curl_results.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "2) Application-level probe (existing PoC code: validate probe)"
+        timeout-minutes: 2
+        working-directory: poc
+        run: |
+          python -m signal_engine.validate probe --days 30 --timeout 8 || echo "probe exited non-zero (diagnostic only)"
+          {
+            echo
+            echo "### Application probe (signal_engine.validate probe)"
+            echo
+            if [ -f out/validation/probe.md ]; then tail -n +2 out/validation/probe.md; else echo "probe.md not produced"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "=== Per-domain result from PoC probe ==="
+          python - <<'EOF'
+          import json, collections
+          rows = json.load(open("out/validation/probe.json"))
+          by = collections.defaultdict(list)
+          for r in rows:
+              by[r["domain"]].append(f'{r["name"]}={r["kind"]}({r["status"]})')
+          for d, items in by.items():
+              ok = any(i.split("=")[1].startswith("ok") for i in items)
+              print(("REACHABLE     " if ok else "NOT REACHABLE ") + d + "  " + ", ".join(items))
+          EOF
+
+      - name: "3) Unit tests"
+        if: always()
+        working-directory: poc
+        run: python -m unittest discover -s tests -v
+
+      - name: Upload diagnostic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-network-test-${{ github.run_id }}
+          path: |
+            network-check/curl_results.tsv
+            network-check/curl_results.md
+            poc/out/validation/probe.json
+            poc/out/validation/probe.md
+          retention-days: 14
+          if-no-files-found: warn
