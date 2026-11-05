@@ -10,8 +10,10 @@ from typing import Any, Optional
 #                        response by this pipeline. Only these count as genuine.
 #   search_index_only  – URL + title came from a web-search index; the page itself
 #                        was NOT fetched. Must be human-verified before outreach.
+#   human_verified     – a named reviewer opened the original page and copied the
+#                        excerpt + date (human-assisted capture, e.g. LinkedIn).
 #   synthetic          – hand-written test fixture. Never a lead. Never counted.
-VERIFICATION_STATUSES = ("verified_api", "search_index_only", "synthetic")
+VERIFICATION_STATUSES = ("verified_api", "human_verified", "search_index_only", "synthetic")
 
 
 @dataclass
@@ -40,8 +42,8 @@ class Signal:
 
     @property
     def is_genuine(self) -> bool:
-        """A signal counts toward the 'genuine' total only if fetched from the source."""
-        return self.verification_status == "verified_api"
+        """Counts as genuine only if the source content itself was seen (API or a human)."""
+        return self.verification_status in ("verified_api", "human_verified")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

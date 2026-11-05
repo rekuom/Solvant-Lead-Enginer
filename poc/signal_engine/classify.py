@@ -113,8 +113,8 @@ PROBLEM = [
 ]
 
 GEO = {
-    "UK": _rx(r"\b(?:uk|u\.k\.|united\s+kingdom|england|scotland|wales|northern\s+ireland|london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool)\b|£"),
-    "UAE": _rx(r"\b(?:uae|u\.a\.e\.|dubai|abu\s+dhabi|sharjah|ajman|emirates)\b|\baed\b"),
+    "UK": _rx(r"\b(?:uk|u\.k\.|united\s+kingdom|england|scotland|wales|northern\s+ireland|london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool)\b"),  # places only: currency is not location
+    "UAE": _rx(r"\b(?:uae|u\.a\.e\.|dubai|abu\s+dhabi|sharjah|ajman|emirates)\b"),
 }
 
 # ---------------------------------------------------------------------------

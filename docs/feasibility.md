@@ -2,6 +2,8 @@
 
 Date: 2026-11-05 · Branch: `claude/trusting-hawking-kqus6b`
 
+> **Update (Phase 2A, 2026-11-05):** the allowed domains were still blocked by this session's network policy. 0 items verified. See [validation-2a.md](validation-2a.md).
+
 ## Bottom line
 
 **Conditional GO.** The engine can be built on legal, free and authorised data. The classification approach works on real titles. But Phase 1 could not prove there is **enough UK/UAE buyer volume at £1–3k** from sources we are allowed to collect automatically. That is the deciding question. Phase 2 must start with a 1–2 week live validation (see [phase-2-plan.md](phase-2-plan.md)) before any build spend.

@@ -50,7 +50,10 @@ def parse_topic(host: str, topic_json: dict[str, Any], verification_status: str 
     )
 
 
-def fetch_forum(client: PoliteClient, host: str, max_topics: int = 30) -> list[Signal]:
+def fetch_forum(client: PoliteClient, host: str, max_topics: int = 30,
+                since: Optional[datetime] = None) -> list[Signal]:
+    """Fetch recent topics. Topics created before `since` are skipped *before* the
+    detail request, to keep load on the forum minimal."""
     cfg = FORUMS[host]
     listing = client.get_json(f"https://{host}/{cfg['category']}.json")
     topics = (listing.get("topic_list") or {}).get("topics") or []
@@ -58,6 +61,10 @@ def fetch_forum(client: PoliteClient, host: str, max_topics: int = 30) -> list[S
     for t in topics[:max_topics]:
         if t.get("pinned"):
             continue  # category rules / "about" topics
+        if since is not None and t.get("created_at"):
+            created = datetime.fromisoformat(t["created_at"].replace("Z", "+00:00"))
+            if created < since:
+                continue
         detail = client.get_json(f"https://{host}/t/{t['id']}.json")
         sig = parse_topic(host, detail)
         if sig:

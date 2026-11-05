@@ -1,13 +1,17 @@
 """Benchmark the intent classifier against manual gold labels.
 
-Run from poc/:  python -m benchmark.run_benchmark [--label v1] [--write]
+Run from poc/:  python -m benchmark.run_benchmark [--set dev|heldout] [--label v1] [--write] [--freeze]
+  --set dev      development benchmark (used for tuning — NOT independent evidence)
+  --set heldout  held-out set (benchmark/heldout/); refuses to report if empty or lock broken
 Writes benchmark/results_<label>.md when --write is given.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +38,28 @@ def load_items() -> list[dict]:
     return items
 
 
+HELDOUT = HERE / "heldout" / "heldout.jsonl"
+HELDOUT_LOCK = HERE / "heldout" / "heldout.lock"
+
+
+def load_heldout() -> list[dict]:
+    items = []
+    for line in HELDOUT.read_text().splitlines():
+        if not line.strip():
+            continue
+        d = json.loads(line)
+        if d["verification_status"] not in ("verified_api", "human_verified"):
+            raise ValueError(f"held-out item is not verified content: {d['url']}")
+        sig = Signal(source=d["source"], source_id=d["url"], url=d["url"], title=d["title"], text=d.get("text", ""),
+                     verification_status=d["verification_status"], posted_at=d.get("posted_at"))
+        items.append({"origin": "heldout", "signal": sig, "gold": d["gold_tier"], "note": d.get("notes", "")})
+    return items
+
+
+def heldout_hash() -> str:
+    return hashlib.sha256(HELDOUT.read_bytes()).hexdigest()
+
+
 def evaluate(items: list[dict]) -> dict:
     now = datetime(2026, 11, 5, tzinfo=timezone.utc)
     rows = []
@@ -51,7 +77,7 @@ def evaluate(items: list[dict]) -> dict:
     over = [r for r in scored if ORDER[r["pred"]] < ORDER[r["gold"]]]
     under = [r for r in scored if ORDER[r["pred"]] > ORDER[r["gold"]]]
     by_origin = {}
-    for o in ("real", "synthetic"):
+    for o in sorted({r["origin"] for r in rows}):
         sub = [r for r in scored if r["origin"] == o]
         by_origin[o] = {"n": len(sub), "exact": sum(r["pred"] == r["gold"] for r in sub)}
     return {
@@ -71,8 +97,7 @@ def to_markdown(res: dict, label: str) -> str:
          "| Metric | Value |", "|---|---|",
          f"| Exact tier accuracy | {pct(res['exact'], res['n_scored'])} |",
          f"| Within one tier | {pct(res['within1'], res['n_scored'])} |",
-         f"| Real items exact | {pct(res['by_origin']['real']['exact'], res['by_origin']['real']['n'])} |",
-         f"| Synthetic items exact | {pct(res['by_origin']['synthetic']['exact'], res['by_origin']['synthetic']['n'])} |",
+         *[f"| {o} items exact | {pct(v['exact'], v['n'])} |" for o, v in res['by_origin'].items()],
          f"| Actionable (A/B) precision | {res['actionable_precision']:.2f} |" if res['actionable_precision'] is not None else "| Actionable precision | n/a |",
          f"| Actionable (A/B) recall | {res['actionable_recall']:.2f} |" if res['actionable_recall'] is not None else "| Actionable recall | n/a |",
          f"| False positives (pred A/B, gold C/D/REJECT) | {len(res['fp'])} |",
@@ -99,8 +124,23 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--label", default="current")
     p.add_argument("--write", action="store_true")
+    p.add_argument("--set", choices=("dev", "heldout"), default="dev")
+    p.add_argument("--freeze", action="store_true", help="heldout: record the file hash in heldout.lock")
     a = p.parse_args()
-    res = evaluate(load_items())
+    if a.set == "heldout":
+        items = load_heldout()
+        if not items:
+            print("Held-out set has 0 items: no independent accuracy claim can be made. See benchmark/heldout/README.md")
+            return 2
+        if a.freeze:
+            HELDOUT_LOCK.write_text(heldout_hash() + "\n")
+        elif not HELDOUT_LOCK.exists() or HELDOUT_LOCK.read_text().strip() != heldout_hash():
+            print("Held-out file changed since it was frozen (or never frozen). Re-review and --freeze first.")
+            return 3
+        a.label = a.label if a.label != "current" else "heldout"
+    else:
+        items = load_items()
+    res = evaluate(items)
     md = to_markdown(res, a.label)
     print(md)
     if a.write:

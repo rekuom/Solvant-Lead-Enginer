@@ -6,8 +6,8 @@ Items: 62 (2 UNCLEAR excluded from scoring).
 |---|---|
 | Exact tier accuracy | 57/60 (95%) |
 | Within one tier | 59/60 (98%) |
-| Real items exact | 31/34 (91%) |
-| Synthetic items exact | 26/26 (100%) |
+| real items exact | 31/34 (91%) |
+| synthetic items exact | 26/26 (100%) |
 | Actionable (A/B) precision | 1.00 |
 | Actionable (A/B) recall | 0.95 |
 | False positives (pred A/B, gold C/D/REJECT) | 0 |

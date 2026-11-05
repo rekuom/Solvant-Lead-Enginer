@@ -1,0 +1,30 @@
+{
+  "run_at": "2026-11-05T10:16:02.523962+00:00",
+  "records_total": 47,
+  "duplicates_dropped": 0,
+  "by_verification": {
+    "search_index_only": 47
+  },
+  "genuine_records": 0,
+  "1_verified_uk_uae_last_30d": 0,
+  "2_seeking_external_provider": 0,
+  "3_relevant_to_1k_3k": 0,
+  "4_permitted_practical_contact_route": 0,
+  "qualified": 0,
+  "high_intent_genuine_reviewed": 0,
+  "by_qualification": {
+    "NEEDS_REVIEW": 19,
+    "EXCLUDED": 28
+  },
+  "exclusion_reasons": {
+    "source content not verified (search title only)": 47,
+    "publication date unknown": 47,
+    "UK/UAE location not evidenced": 45,
+    "intent tier D (no explicit request to hire)": 9,
+    "recruitment_or_staffing": 7,
+    "vendor_self_promotion": 7,
+    "unrelated_no_automation_scope": 3,
+    "unrelated_physical_or_industrial_automation": 2
+  },
+  "false_positives": "requires human verdicts \u2014 see benchmark/heldout"
+}

@@ -1,0 +1,4 @@
+{"source": "contracts_finder", "result": "failed", "kind": "proxy_block", "error": "www.contractsfinder.service.gov.uk: proxy_block: <urlopen error Tunnel connection failed: 403 Forbidden>"}
+{"source": "find_a_tender", "result": "failed", "kind": "proxy_block", "error": "www.find-tender.service.gov.uk: proxy_block: <urlopen error Tunnel connection failed: 403 Forbidden>"}
+{"source": "discourse:community.n8n.io", "result": "failed", "kind": "proxy_block", "error": "community.n8n.io: robots.txt unreachable (proxy_block): <urlopen error Tunnel connection failed: 403 Forbidden>"}
+{"source": "discourse:community.make.com", "result": "failed", "kind": "proxy_block", "error": "community.make.com: robots.txt unreachable (proxy_block): <urlopen error Tunnel connection failed: 403 Forbidden>"}
