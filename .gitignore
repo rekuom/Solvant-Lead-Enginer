@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node (Phase 2 Next.js app)
+node_modules/
+.next/
+out/
+dist/
+
+# PoC run output (regenerate with `make run`)
+poc/out/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+supabase/.temp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

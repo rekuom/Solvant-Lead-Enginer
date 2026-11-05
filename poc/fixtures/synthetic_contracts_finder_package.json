@@ -1,0 +1,60 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC test fixture shaped like an OCDS 1.1 release package. Not real notices. Used only to test the parser, dedupe and classifier. Never counted as a lead.",
+  "_kind": "ocds",
+  "_source": "contracts_finder",
+  "package": {
+    "uri": "https://example.invalid/package",
+    "publishedDate": "2026-11-01T09:00:00Z",
+    "releases": [
+      {
+        "ocid": "ocds-b5fd17-00000000-0000-4000-8000-000000000001",
+        "id": "00000000-0000-4000-8000-000000000001",
+        "date": "2026-10-28T10:00:00Z",
+        "tag": ["tender"],
+        "buyer": {"name": "SYNTHETIC Parish Council"},
+        "tender": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "title": "Automation of invoice processing and supplier payment workflow",
+          "description": "The council is seeking a supplier to automate manual invoice processing between our finance system and email inbox. Contact the clerk at clerk@example.invalid or 01234 567890.",
+          "status": "active",
+          "value": {"amount": 2500, "currency": "GBP"},
+          "tenderPeriod": {"startDate": "2026-10-28T10:00:00Z", "endDate": "2026-11-20T12:00:00Z"}
+        }
+      },
+      {
+        "ocid": "ocds-b5fd17-00000000-0000-4000-8000-000000000002",
+        "id": "00000000-0000-4000-8000-000000000002",
+        "date": "2026-10-20T10:00:00Z",
+        "tag": ["tender"],
+        "buyer": {"name": "SYNTHETIC NHS Trust"},
+        "tender": {
+          "title": "Autonomous robot for warehouse picking",
+          "description": "Supply of autonomous robots and conveyor automation for the central store.",
+          "status": "active",
+          "value": {"amount": 450000, "currency": "GBP"},
+          "tenderPeriod": {"endDate": "2026-12-01T12:00:00Z"}
+        }
+      },
+      {
+        "ocid": "ocds-b5fd17-00000000-0000-4000-8000-000000000003",
+        "id": "00000000-0000-4000-8000-000000000003",
+        "date": "2026-07-01T10:00:00Z",
+        "tag": ["tender"],
+        "buyer": {"name": "SYNTHETIC Borough Council"},
+        "tender": {
+          "title": "Intelligent automation delivery partner",
+          "description": "Seeking a partner to deliver RPA and workflow automation across council services.",
+          "status": "active",
+          "value": {"amount": 215000, "currency": "GBP"},
+          "tenderPeriod": {"endDate": "2026-09-04T12:00:00Z"}
+        }
+      },
+      {
+        "id": "no-guid-here",
+        "date": "2026-10-30T10:00:00Z",
+        "tender": {"title": "Release without a resolvable notice URL — must be skipped"}
+      }
+    ]
+  }
+}

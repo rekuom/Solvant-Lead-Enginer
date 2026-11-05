@@ -1,0 +1,25 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC test fixture shaped like a Discourse /t/<id>.json response. Not a real post. Never counted as a lead.",
+  "_kind": "discourse_topic",
+  "_host": "community.n8n.io",
+  "topic": {
+    "id": 999001,
+    "slug": "synthetic-need-someone-to-connect-crm",
+    "title": "Need someone to connect our HubSpot CRM to Xero — UK accounting firm",
+    "created_at": "2026-11-02T08:00:00Z",
+    "closed": false,
+    "archived": false,
+    "category_id": 13,
+    "post_stream": {
+      "posts": [
+        {
+          "id": 1,
+          "username": "synthetic_user",
+          "created_at": "2026-11-02T08:00:00Z",
+          "cooked": "<p>We are a 12-person accounting practice in Leeds. We spend hours every week manually copying invoices from HubSpot deals into Xero. Looking for a freelancer to build this integration. Budget around £1,500, fixed price preferred. Email me at someone@example.invalid</p>"
+        }
+      ]
+    }
+  }
+}
