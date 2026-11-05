@@ -30,8 +30,8 @@ def sig(title: str, text: str = "", status: str = "verified_api", posted: str | 
 
 class TextUtilTests(unittest.TestCase):
     def test_pii_redacted(self):
-        out = redact_pii("mail jo@acme.co.uk or call +44 7700 900123 — budget £1,500")
-        self.assertNotIn("jo@acme.co.uk", out)
+        out = redact_pii("mail jo@acme.invalid or call +44 7700 900123 — budget £1,500")
+        self.assertNotIn("jo@acme.invalid", out)
         self.assertNotIn("7700", out)
         self.assertIn("£1,500", out)  # money must survive redaction
 
