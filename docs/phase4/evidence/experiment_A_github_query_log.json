@@ -1,0 +1,242 @@
+[
+ {
+  "at": "2026-11-06T07:58:02.412974+00:00",
+  "query_id": "github:agency-en-00",
+  "results": 1,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:20.992008+00:00",
+  "query_id": "github:agency-en-01",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:39.282659+00:00",
+  "query_id": "github:agency-en-02",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:58.116523+00:00",
+  "query_id": "github:agency-en-03",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:40.877432+00:00",
+  "query_id": "github:agency-en-04",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:05.179620+00:00",
+  "query_id": "github:explic-en-00",
+  "results": 2,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:23.594202+00:00",
+  "query_id": "github:explic-en-01",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:41.975538+00:00",
+  "query_id": "github:explic-en-02",
+  "results": 1,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:00.762941+00:00",
+  "query_id": "github:explic-en-03",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:43.441487+00:00",
+  "query_id": "github:explic-en-04",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:56.972560+00:00",
+  "query_id": "github:explic-en-05",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:07.788539+00:00",
+  "query_id": "github:extern-en-00",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:26.260075+00:00",
+  "query_id": "github:extern-en-01",
+  "results": 3,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:44.661607+00:00",
+  "query_id": "github:extern-en-02",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:03.402440+00:00",
+  "query_id": "github:extern-en-03",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:46.009479+00:00",
+  "query_id": "github:extern-en-04",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:59.764766+00:00",
+  "query_id": "github:extern-en-05",
+  "results": 3,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:10.443988+00:00",
+  "query_id": "github:freela-en-00",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:28.919904+00:00",
+  "query_id": "github:freela-en-01",
+  "results": 1,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:47.293302+00:00",
+  "query_id": "github:freela-en-02",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:06.052981+00:00",
+  "query_id": "github:freela-en-03",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:21.443196+00:00",
+  "query_id": "github:ghbroa-en-00",
+  "results": 30,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:24.364258+00:00",
+  "query_id": "github:ghbroa-en-01",
+  "results": 30,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:27.372849+00:00",
+  "query_id": "github:ghbroa-en-02",
+  "results": 30,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:30.484437+00:00",
+  "query_id": "github:ghbroa-en-03",
+  "results": 29,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:48.985267+00:00",
+  "query_id": "github:ghbroa-en-04",
+  "results": 10,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:13.128634+00:00",
+  "query_id": "github:implem-en-00",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:31.492125+00:00",
+  "query_id": "github:implem-en-01",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:50.335870+00:00",
+  "query_id": "github:implem-en-02",
+  "results": 1,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:32.923625+00:00",
+  "query_id": "github:implem-en-03",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:15.708860+00:00",
+  "query_id": "github:proble-en-00",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:34.128494+00:00",
+  "query_id": "github:proble-en-01",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:52.892375+00:00",
+  "query_id": "github:proble-en-02",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:35.726112+00:00",
+  "query_id": "github:proble-en-03",
+  "results": 3,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:51.555460+00:00",
+  "query_id": "github:proble-en-04",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:18.366943+00:00",
+  "query_id": "github:recomm-en-00",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:36.651975+00:00",
+  "query_id": "github:recomm-en-01",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:58:55.516286+00:00",
+  "query_id": "github:recomm-en-02",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:38.288225+00:00",
+  "query_id": "github:recomm-en-03",
+  "results": 0,
+  "status": "ok"
+ },
+ {
+  "at": "2026-11-06T07:59:54.238379+00:00",
+  "query_id": "github:recomm-en-04",
+  "results": 0,
+  "status": "ok"
+ }
+]

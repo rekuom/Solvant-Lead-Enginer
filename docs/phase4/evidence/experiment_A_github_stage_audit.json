@@ -1,0 +1,63 @@
+{
+ "stage_1_raw": 134,
+ "by_source_raw": {
+  "github_issues": 134
+ },
+ "stage_2_after_dedupe": 133,
+ "duplicates_removed": 1,
+ "stage_3_verified_content": 133,
+ "stage_3_user_supplied": 0,
+ "stage_3_snippet_only": 0,
+ "stage_4_technical_relevance": {
+  "relevant": 71,
+  "not_relevant": 56,
+  "uncertain": 6
+ },
+ "stage_5_buying_intent": {
+  "none_or_discussion": 107,
+  "seller_offer": 13,
+  "explicit_hire_request": 6,
+  "partner_search": 1,
+  "employment_or_staffing": 3,
+  "job_seeker": 1,
+  "problem_only": 2
+ },
+ "stage_6_pipelines": {
+  "A_DIRECT_SME": 0,
+  "B_FREELANCE_PROJECT": 0,
+  "C_AGENCY_PARTNER": 0,
+  "D_OPERATIONAL_PAIN": 0,
+  "E_PROCUREMENT": 0,
+  "F_RECRUITMENT_SIGNAL": 0,
+  "G_LICENSED_LEADS": 0,
+  "GLOBAL_REVIEW": 0,
+  "H_RESEARCH_UNVERIFIED": 11,
+  "EXCLUDED": 122
+ },
+ "noise_flags": {
+  "no_external_invitation": 66,
+  "support_or_internal_task": 13,
+  "seo_or_content_marketing": 12,
+  "lead_aggregator_or_bot_post": 33,
+  "spam_campaign": 6,
+  "lead_marketplace_advertising": 1,
+  "crypto_bounty_or_token_payment": 1
+ },
+ "exclusion_reasons": {
+  "internal project task or discussion: no invitation for outside help": 47,
+  "noise: seo_or_content_marketing": 12,
+  "noise: lead_aggregator_or_bot_post": 30,
+  "deliverable is not software/AI/automation/integration work": 15,
+  "noise: lead_aggregator_or_bot_post, spam_campaign": 3,
+  "noise: lead_marketplace_advertising": 1,
+  "closed/resolved at source": 9,
+  "noise: spam_campaign": 3,
+  "freelancer or job seeker looking for work (not a buyer)": 1,
+  "noise: crypto_bounty_or_token_payment": 1
+ },
+ "stage_7_shortlisted": {
+  "H_RESEARCH_UNVERIFIED": 11
+ },
+ "omitted_beyond_shortlist_retained_privately": {},
+ "_note": "Aggregate counts from the real GitHub run of 2026-11-06 (final classifier, after the general detector fixes; see docs/phase4/experiments.md). Per-record URLs deliberately omitted: public repository."
+}

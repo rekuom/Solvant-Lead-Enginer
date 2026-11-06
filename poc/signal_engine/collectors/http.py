@@ -112,14 +112,14 @@ class PoliteClient:
             self._robots[base] = rp
         return rp.can_fetch(self.user_agent, url)
 
-    def get_json(self, url: str, check_robots: Optional[bool] = None) -> Any:
+    def get_json(self, url: str, check_robots: Optional[bool] = None, headers: Optional[dict] = None) -> Any:
         if (self.check_robots if check_robots is None else check_robots) and not self._robots_allows(url):
             raise FetchBlocked(f"robots.txt disallows {url}", ROBOTS_DISALLOWED)
         host = urlsplit(url).netloc
         wait = self.min_interval_s - (time.monotonic() - self._last.get(host, -1e9))
         if wait > 0:
             self._sleep(wait)
-        req = urllib.request.Request(url, headers={"User-Agent": self.user_agent, "Accept": "application/json"})
+        req = urllib.request.Request(url, headers={"User-Agent": self.user_agent, "Accept": "application/json", **(headers or {})})
         attempt = 0
         while True:
             try:

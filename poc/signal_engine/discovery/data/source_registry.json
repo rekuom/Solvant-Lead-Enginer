@@ -1,0 +1,1028 @@
+{
+ "review_date": "2026-11-06",
+ "statuses": [
+  "permitted",
+  "restricted",
+  "manual_only",
+  "licensed",
+  "unknown",
+  "prohibited"
+ ],
+ "sources": [
+  {
+   "key": "contracts_finder",
+   "name": "UK Contracts Finder (OCDS API)",
+   "family": "procurement",
+   "status": "permitted",
+   "collection": "api",
+   "connector": "ocds",
+   "enabled_by_default": true,
+   "pipelines": [
+    "E"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "undocumented; 429 seen; backoff implemented",
+   "commercial_reuse": "OGL v3 (attribution)",
+   "contact_route": "formal procurement process",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://www.contractsfinder.service.gov.uk/apidocumentation/Notices/1/GET-Published-Notice-OCDS-Search",
+    "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Existing collector. API ignores `keyword` (run 42174857442): one paginated pull + client-side relevance screening."
+  },
+  {
+   "key": "find_a_tender",
+   "name": "UK Find a Tender (OCDS API)",
+   "family": "procurement",
+   "status": "permitted",
+   "collection": "api",
+   "connector": "ocds",
+   "enabled_by_default": true,
+   "pipelines": [
+    "E"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "OGL v3 (attribution)",
+   "contact_route": "formal procurement process",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://www.find-tender.service.gov.uk/Developer/Documentation"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Existing collector."
+  },
+  {
+   "key": "ted",
+   "name": "EU TED Search API v3",
+   "family": "procurement",
+   "status": "permitted",
+   "collection": "api",
+   "connector": "ted",
+   "enabled_by_default": true,
+   "pipelines": [
+    "E"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "EU reuse policy (credit + indicate changes)",
+   "contact_route": "formal procurement process",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://ted.europa.eu/en/legal-notice",
+    "https://docs.ted.europa.eu/api/latest/search.html"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Existing collector; anonymous search; reuse incl. commercial with credit."
+  },
+  {
+   "key": "uae_tenders",
+   "name": "UAE government tender portals (Dubai eSupply, Abu Dhabi, federal MoF)",
+   "family": "procurement",
+   "status": "manual_only",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "E"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "supplier registration required",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://u.ae/information-and-services/business/government-tendering-and-awarding"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "No public data API found; supplier registration with UAE trade licence required."
+  },
+  {
+   "key": "github_issues",
+   "name": "GitHub Issues (REST search API)",
+   "family": "developer_community",
+   "status": "permitted",
+   "collection": "api",
+   "connector": "github",
+   "enabled_by_default": true,
+   "pipelines": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "H"
+   ],
+   "auth": "optional token (Actions GITHUB_TOKEN raises limit)",
+   "cost": "free",
+   "rate_limit": "search: 10/min unauthenticated, 30/min authenticated",
+   "commercial_reuse": "API use allowed; no spam / no selling personal info (AUP)",
+   "contact_route": "reply in the issue only where outside paid help is explicitly invited; never email harvesting (GitHub AUP)",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies",
+    "https://docs.github.com/en/rest/search/search"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Real calibration (2026-11-06, 12 queries): results dominated by SEO spam, AI lead-bot issues, crypto bounty farms and internal task trackers; genuine SME buyers rare. Noise detectors required."
+  },
+  {
+   "key": "github_discussions",
+   "name": "GitHub Discussions (GraphQL search)",
+   "family": "developer_community",
+   "status": "permitted",
+   "collection": "api",
+   "connector": "github",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "C",
+    "H"
+   ],
+   "auth": "token required",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "reply in discussion where solicitation is welcome",
+   "buying_intent_quality": "unknown",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://docs.github.com/en/graphql"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "GraphQL requires a token; blocked in Claude Cloud; runs in Actions with GITHUB_TOKEN. Untested."
+  },
+  {
+   "key": "hn_algolia",
+   "name": "Hacker News (official API + Algolia HN Search)",
+   "family": "developer_community",
+   "status": "restricted",
+   "collection": "api",
+   "connector": "hn",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "B",
+    "C",
+    "F"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "Algolia ~10,000/hour/IP (secondary sources)",
+   "commercial_reuse": "unknown",
+   "contact_route": "reply on HN or the contact method the poster published",
+   "buying_intent_quality": "high (monthly 'Freelancer? Seeking freelancer?' thread has explicit SEEKING FREELANCER posts)",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://github.com/HackerNews/API",
+    "https://hn.algolia.com/api"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Official read API intended for third-party apps; commercial reuse terms not found. Collector built, DISABLED until the owner reviews terms (--allow-restricted hn_algolia)."
+  },
+  {
+   "key": "stack_exchange",
+   "name": "Stack Exchange API",
+   "family": "developer_community",
+   "status": "permitted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D",
+    "H"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "300/day anonymous; 10,000/day with key",
+   "commercial_reuse": "CC BY-SA (attribution)",
+   "contact_route": "answer on-site only; solicitation not allowed",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://api.stackexchange.com/docs",
+    "https://stackexchange.com/legal/api-terms-of-use"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Mostly how-to questions (operational pain at best). Content CC BY-SA with attribution. Connector not built (low commercial intent)."
+  },
+  {
+   "key": "gitlab_issues",
+   "name": "GitLab public issues",
+   "family": "developer_community",
+   "status": "unknown",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "H"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "unknown",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://docs.gitlab.com/ee/api/search.html"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Not researched in depth; expected similar to GitHub with less volume."
+  },
+  {
+   "key": "dev_to",
+   "name": "DEV Community (Forem API)",
+   "family": "developer_community",
+   "status": "unknown",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D",
+    "H"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "comment on-site",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://developers.forem.com/api"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Articles, not requests. Not built."
+  },
+  {
+   "key": "indie_hackers",
+   "name": "Indie Hackers",
+   "family": "entrepreneur_community",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-site replies",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "No public API found; terms not reviewed. Manual capture only."
+  },
+  {
+   "key": "bounty_platforms",
+   "name": "Paid issue-bounty platforms (Algora, IssueHunt, Gitcoin, Opire)",
+   "family": "bounty",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "platform claim/submit",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Developer bounties for open-source fixes: real money but not SME implementation demand. Crypto bounty farms seen on GitHub are excluded as noise."
+  },
+  {
+   "key": "upwork",
+   "name": "Upwork (GraphQL API)",
+   "family": "freelance_marketplace",
+   "status": "restricted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "OAuth2 + approved key",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform proposal only (uses Connects)",
+   "buying_intent_quality": "high",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": false,
+    "export_or_retain": "per platform terms",
+    "agency_accounts": true
+   },
+   "evidence": [
+    "https://www.upwork.com/developer/documentation/graphql",
+    "https://www.upwork.com/developer"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Official GraphQL API with marketplace job-posting search scope; requires approved API key; terms must be read. No auto-proposals. Not built: needs credentials + approval."
+  },
+  {
+   "key": "fiverr_briefs",
+   "name": "Fiverr Briefs (matched client briefs)",
+   "family": "freelance_marketplace",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "respond inside Fiverr within 72h",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": false,
+    "export_or_retain": false,
+    "agency_accounts": true
+   },
+   "evidence": [
+    "https://help.fiverr.com/hc/en-us/articles/4415608857745"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Briefs are matched privately to sellers (dashboard + email); no public feed or API. Intake via user-authorised email alert import or manual paste."
+  },
+  {
+   "key": "freelancer_com",
+   "name": "Freelancer.com (official API)",
+   "family": "freelance_marketplace",
+   "status": "restricted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "OAuth2",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform bid only",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": false,
+    "export_or_retain": "per platform terms",
+    "agency_accounts": true
+   },
+   "evidence": [
+    "https://developers.freelancer.com"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Official API with OAuth2 and project search (per SDK docs); app registration required. Not built: needs credentials."
+  },
+  {
+   "key": "peopleperhour",
+   "name": "PeoplePerHour",
+   "family": "freelance_marketplace",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform proposal",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": false,
+    "export_or_retain": false,
+    "agency_accounts": "unknown"
+   },
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "No public API found. UK-heavy buyers. Intake via alerts/manual."
+  },
+  {
+   "key": "malt",
+   "name": "Malt",
+   "family": "freelance_marketplace",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": false,
+    "export_or_retain": false,
+    "agency_accounts": "unknown"
+   },
+   "evidence": [
+    "https://www.malt.uk/a/freelance/tech"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "European (FR/DE/ES/NL/BE/UK). No public API found. Intake via alerts/manual."
+  },
+  {
+   "key": "contra",
+   "name": "Contra",
+   "family": "freelance_marketplace",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Commission-free; no public API found."
+  },
+  {
+   "key": "guru",
+   "name": "Guru",
+   "family": "freelance_marketplace",
+   "status": "unknown",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Not researched in depth."
+  },
+  {
+   "key": "bark",
+   "name": "Bark.com",
+   "family": "lead_marketplace",
+   "status": "licensed",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "G"
+   ],
+   "auth": "none",
+   "cost": "credits per lead",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "respond via Bark after paying credits",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": "only for leads you purchased, per Bark terms",
+    "export_or_retain": "unknown",
+    "agency_accounts": true
+   },
+   "evidence": [
+    "https://help.bark.com/hc/en-gb/articles/13346288068892"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Credits vary by country (~$2.35/credit US page); credits bought after 1 Nov 2025 expire after 3 months; leads shared with several providers. Purchase nothing; import purchased leads only."
+  },
+  {
+   "key": "sortlist",
+   "name": "Sortlist",
+   "family": "lead_marketplace",
+   "status": "licensed",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "G"
+   ],
+   "auth": "none",
+   "cost": "subscription (unpublished)",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "respond via Sortlist",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://www.g2.com/products/sortlist/pricing"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Agency-side pricing not published; reviewers report leads are quickly reserved by competing agencies."
+  },
+  {
+   "key": "clutch_goodfirms",
+   "name": "Clutch / GoodFirms / DesignRush (agency directories)",
+   "family": "lead_marketplace",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "G"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "inbound via profile",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Directories: inbound enquiries to a paid profile, not a lead feed."
+  },
+  {
+   "key": "linkedin",
+   "name": "LinkedIn",
+   "family": "social",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "C",
+    "D",
+    "F"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "platform messaging/comments per LinkedIn rules",
+   "buying_intent_quality": "high",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "No API to search others' posts; User Agreement prohibits scraping. Manual capture only."
+  },
+  {
+   "key": "facebook_groups",
+   "name": "Facebook groups",
+   "family": "social",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "inside the group, per group rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Groups API deprecated (2024). Never scrape private groups. Manual capture only."
+  },
+  {
+   "key": "reddit",
+   "name": "Reddit Data API",
+   "family": "social",
+   "status": "restricted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-Reddit replies per subreddit rules",
+   "buying_intent_quality": "high",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://redditinc.com/policies/data-api-terms"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Commercial use needs written approval; free tier non-commercial. Not built."
+  },
+  {
+   "key": "x_twitter",
+   "name": "X API",
+   "family": "social",
+   "status": "restricted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "pay-per-use",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-platform",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://docs.x.com"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Pay-per-use since Feb 2026 (~$0.005/post read reported); paid. Not built."
+  },
+  {
+   "key": "bluesky",
+   "name": "Bluesky (AT Protocol)",
+   "family": "social",
+   "status": "restricted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "app password",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-platform replies",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://docs.bsky.app"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "searchPosts requires authentication (403 anonymous, per multiple reports). Needs an app password. Not built."
+  },
+  {
+   "key": "mastodon",
+   "name": "Mastodon instances",
+   "family": "social",
+   "status": "unknown",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-platform",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://docs.joinmastodon.org/methods/search/"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Per-instance policies; full-text search usually needs auth. Not built."
+  },
+  {
+   "key": "n8n_community",
+   "name": "n8n Community – Jobs",
+   "family": "ecosystem_community",
+   "status": "restricted",
+   "collection": "api",
+   "connector": "discourse",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "B",
+    "C"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "reply on the job thread",
+   "buying_intent_quality": "high",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://community.n8n.io/tos"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Public Discourse JSON reachable (run 42032803184); terms not reviewed; permission not obtained. Collector disabled."
+  },
+  {
+   "key": "make_community",
+   "name": "Make Community – Hire a Pro",
+   "family": "ecosystem_community",
+   "status": "restricted",
+   "collection": "api",
+   "connector": "discourse",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "B",
+    "C"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "reply on the Hire a Pro thread",
+   "buying_intent_quality": "high",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://community.make.com/tos"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "As n8n."
+  },
+  {
+   "key": "zapier_community",
+   "name": "Zapier Community",
+   "family": "ecosystem_community",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "unknown",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Support forum; solicitation rules not verified."
+  },
+  {
+   "key": "power_platform_community",
+   "name": "Microsoft Power Platform Community",
+   "family": "ecosystem_community",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "support forum; solicitation likely prohibited",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Support forum."
+  },
+  {
+   "key": "hubspot_salesforce_pipedrive_zoho_ghl",
+   "name": "CRM vendor communities (HubSpot, Salesforce Trailblazer, Pipedrive, Zoho, GoHighLevel)",
+   "family": "ecosystem_community",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "support forums; partner directories",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Support forums usually prohibit solicitation; vendor partner programmes are the legitimate route."
+  },
+  {
+   "key": "shopify_woo_xero_qbo_airtable_notion_bubble_webflow_stripe",
+   "name": "Platform communities (Shopify, WooCommerce, Xero, QuickBooks, Airtable, Notion, Bubble, Webflow, Stripe)",
+   "family": "ecosystem_community",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "support forums; experts directories",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Several run official 'experts/partners' directories (inbound). Not built."
+  },
+  {
+   "key": "uk_business_forums",
+   "name": "UK Business Forums",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "intake",
+   "connector": "intake",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum, per rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "No API; no permission. Manual capture only."
+  },
+  {
+   "key": "rss_atom",
+   "name": "Permitted RSS/Atom feeds",
+   "family": "feed",
+   "status": "permitted",
+   "collection": "feed",
+   "connector": "feeds",
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "per feed",
+   "buying_intent_quality": "unknown",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Generic connector; feeds must be individually registered with their terms. None registered yet."
+  },
+  {
+   "key": "web_search_brave",
+   "name": "Brave Search API",
+   "family": "web_search",
+   "status": "licensed",
+   "collection": "search",
+   "connector": "search",
+   "enabled_by_default": false,
+   "pipelines": [
+    "H"
+   ],
+   "auth": "API key",
+   "cost": "paid / small monthly credit",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "n/a (discovery only)",
+   "buying_intent_quality": "n/a",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://brave.com/search/api/"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Card required; reported ~$5/month free credits (~1,000 queries) then ~$4-5 per 1,000 (sources disagree). Adapter built, DISABLED without key."
+  },
+  {
+   "key": "web_search_google_cse",
+   "name": "Google Custom Search JSON API",
+   "family": "web_search",
+   "status": "prohibited",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "H"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "n/a",
+   "buying_intent_quality": "n/a",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://brave.com/learn/google-api-shutdown/"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Closed to new customers since 20 Jan 2026; shuts down 1 Jan 2027."
+  },
+  {
+   "key": "web_search_bing",
+   "name": "Bing Web Search API",
+   "family": "web_search",
+   "status": "prohibited",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "H"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "n/a",
+   "buying_intent_quality": "n/a",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Retired 11 Aug 2025 (endpoints return 410)."
+  },
+  {
+   "key": "ai_project_boards",
+   "name": "AI community project boards (e.g. Hugging Face forums, Discord servers)",
+   "family": "ai_community",
+   "status": "unknown",
+   "collection": "none",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "H"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "per community rules",
+   "buying_intent_quality": "low",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-06",
+   "notes": "Only intentionally public requests where the author seeks help. Never search exposed private chats/unlisted conversation links."
+  },
+  {
+   "key": "companies_house",
+   "name": "UK Companies House API",
+   "family": "enrichment",
+   "status": "permitted",
+   "collection": "api",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [],
+   "auth": "free API key",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "n/a",
+   "buying_intent_quality": "n/a",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://developer.company-information.service.gov.uk/"
+   ],
+   "review_date": "2026-11-06",
+   "notes": "Free official API (key required) for company verification; not built yet."
+  }
+ ]
+}

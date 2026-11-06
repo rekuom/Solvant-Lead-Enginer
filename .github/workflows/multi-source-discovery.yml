@@ -1,0 +1,120 @@
+name: Multi-source discovery
+
+# Manual-only Phase 4 discovery. Permitted, no-cost sources only (registry-gated). No outreach, no paid APIs,
+# no Supabase, no schedule. The repository is PUBLIC: public outputs are redacted; private detail is not uploaded.
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma list: github_issues, hn_algolia (restricted), feeds, search:brave (needs key; none configured)"
+        required: false
+        default: "github_issues"
+      since_days:
+        description: "Look-back window (1-90 days)"
+        required: false
+        default: "45"
+      max_requests:
+        description: "Max API requests per connector (1-30)"
+        required: false
+        default: "20"
+      include_discussions:
+        description: "Also search GitHub Discussions (GraphQL with the job token)"
+        type: boolean
+        default: true
+      allow_restricted:
+        description: "Restricted sources you have reviewed and explicitly allow for THIS run (e.g. hn_algolia). Leave empty if unsure."
+        required: false
+        default: ""
+      dry_run:
+        description: "Plan only: no requests"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multi-source-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate inputs
+        id: in
+        env:
+          IN_SOURCES: ${{ inputs.sources }}
+          IN_DAYS: ${{ inputs.since_days }}
+          IN_MAX: ${{ inputs.max_requests }}
+          IN_ALLOW: ${{ inputs.allow_restricted }}
+        run: |
+          [[ "$IN_SOURCES" =~ ^[a-z_:,]+$ ]] || { echo "invalid sources"; exit 1; }
+          [[ -z "$IN_ALLOW" || "$IN_ALLOW" =~ ^[a-z_,]+$ ]] || { echo "invalid allow_restricted"; exit 1; }
+          [[ "$IN_DAYS" =~ ^[0-9]+$ && "$IN_DAYS" -ge 1 && "$IN_DAYS" -le 90 ]] || { echo "since_days 1-90"; exit 1; }
+          [[ "$IN_MAX" =~ ^[0-9]+$ && "$IN_MAX" -ge 1 && "$IN_MAX" -le 30 ]] || { echo "max_requests 1-30"; exit 1; }
+          { echo "sources=$IN_SOURCES"; echo "days=$IN_DAYS"; echo "max=$IN_MAX"; echo "allow=$IN_ALLOW"; } >> "$GITHUB_OUTPUT"
+
+      - name: Unit + regression tests (must pass before any collection)
+        working-directory: poc
+        run: python -m unittest discover -s tests
+
+      - name: Source permission registry
+        working-directory: poc
+        run: |
+          echo "## Source registry" >> "$GITHUB_STEP_SUMMARY"
+          python -m signal_engine.discovery.run sources >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Discover (permitted sources only)
+        id: disc
+        working-directory: poc
+        env:
+          GITHUB_TOKEN: ${{ github.token }}     # read-only job token: raises GitHub search limits, enables Discussions GraphQL
+          SOURCES: ${{ steps.in.outputs.sources }}
+          DAYS: ${{ steps.in.outputs.days }}
+          MAX: ${{ steps.in.outputs.max }}
+          ALLOW: ${{ steps.in.outputs.allow }}
+          DISC: ${{ inputs.include_discussions && '--include-discussions' || '' }}
+          DRY: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          set +e
+          python -m signal_engine.discovery.run discover --sources "$SOURCES" --since-days "$DAYS" --max-requests "$MAX" \
+            --max-queries 40 --allow-restricted "$ALLOW" $DISC $DRY
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Assess, route, rank (redacted public report)
+        if: always()
+        working-directory: poc
+        run: |
+          python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
+          cat out/discovery/report_public.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload REDACTED outputs only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-${{ github.run_id }}
+          path: |
+            poc/out/discovery/report_public.md
+            poc/out/discovery/report_public.csv
+            poc/out/discovery/report_public.jsonl
+            poc/out/discovery/stage_audit.json
+            poc/out/discovery/run_log.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Fail if any enabled connector failed (never hide failures behind green)
+        if: always()
+        run: |
+          if [ "${{ steps.disc.outputs.exit }}" != "0" ]; then
+            echo "::error::One or more connectors failed or partially failed — see run_log.json"; exit 1; fi
