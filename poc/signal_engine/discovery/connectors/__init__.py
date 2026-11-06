@@ -20,6 +20,7 @@ class RunLog:
     skipped: int = 0
     records: int = 0
     est_cost_usd: float = 0.0
+    duration_s: float = 0.0
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def event(self, **kw: Any) -> None:
@@ -37,4 +38,5 @@ class RunLog:
 
     def to_dict(self) -> dict:
         return {"source": self.source, "status": self.status, "requests": self.requests, "ok": self.ok, "failed": self.failed,
-                "skipped": self.skipped, "records": self.records, "est_cost_usd": round(self.est_cost_usd, 4), "events": self.events[-60:]}
+                "skipped": self.skipped, "records": self.records, "est_cost_usd": round(self.est_cost_usd, 4), "duration_s": round(self.duration_s, 1),
+                "events": self.events[-60:]}

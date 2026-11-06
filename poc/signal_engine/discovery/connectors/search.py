@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -50,7 +51,14 @@ class SearchProvider:
 
 
 class BraveProvider(SearchProvider):
-    """Brave Search API (https://api.search.brave.com/res/v1/web/search). Needs BRAVE_SEARCH_API_KEY."""
+    """Brave Web Search API — GET https://api.search.brave.com/res/v1/web/search, header X-Subscription-Token.
+    Parameters used (per Brave's API reference, checked 2026-11-06): q (≤400 chars/50 words), country (documented subset or ALL),
+    search_lang (Brave codes, e.g. en-gb, pt-pt, nb), count (max 20), freshness (pd/pw/pm/py), spellcheck=0 (keep the exact phrase).
+    Response: web.results[].url/title/description/page_age/age.
+
+    TERMS: Brave "Data for Search"/"Data for AI" plans do NOT permit retaining any part of the API output; only a
+    "storage rights" plan does. Results are therefore processed within the run and, by default, only aggregate counts are
+    published (see run.report). Brave grants no rights to third-party pages it links to."""
     name = "brave"
     registry_key = "web_search_brave"
     URL = "https://api.search.brave.com/res/v1/web/search"
@@ -63,7 +71,10 @@ class BraveProvider(SearchProvider):
         self.freshness = freshness
 
     def search(self, q: PlannedQuery) -> list[SearchHit]:
-        url = f"{self.URL}?q={quote(q.query)}&count=20&freshness={self.freshness}&search_lang={q.lang}"
+        country = q.country or "ALL"
+        lang = q.search_lang or q.lang
+        url = (f"{self.URL}?q={quote(q.query)}&count=20&freshness={self.freshness}&country={country}"
+               f"&search_lang={lang}&spellcheck=0&safesearch=moderate")
         data = self.client.get_json(url, check_robots=False, headers={"X-Subscription-Token": self.api_key})
         return [SearchHit(r.get("url", ""), r.get("title", ""), r.get("description", ""), r.get("age"), q.lang)
                 for r in ((data.get("web") or {}).get("results") or [])]
@@ -103,11 +114,13 @@ def run_search(provider: SearchProvider, queries: list[PlannedQuery], max_reques
         for h in hits:
             if not h.url.startswith("https://") or h.url in out:
                 continue
+            landing = landing_source(h.url)
             out[h.url] = RawRecord(source_key="web_search_brave", source_id=h.url, url=h.url, title=h.title,
                                    body=clean_text(h.snippet, limit=300),
                                    verification="fixture" if fixture else "search_snippet_only",
                                    created_at=None, state="unknown", fetched_at=now, query_id=q.query_id, language=h.lang,
-                                   meta={"kind": "search_hit", "age_text": h.age, "query_category": q.category})
+                                   meta={"kind": "search_hit", "age_text": h.age, "query_category": q.category, "market": q.market,
+                                         "landing_source": landing, "provider": provider.name})
         log.event(kind="ok", query_id=q.query_id, returned=len(hits))
     log.records = len(out)
     return list(out.values()), log
@@ -177,4 +190,59 @@ def run_feeds(client: Optional[PoliteClient] = None) -> tuple[list[RawRecord], R
             log.failed += 1
             log.event(kind="error", feed=f["id"], detail=str(exc)[:200])
     log.records = len(out)
+    return out, log
+
+
+# ----------------------------------------------------------------------------- landing-page verification
+# Map result domains to registry sources. A landing page is fetched ONLY through that source's permitted API;
+# no generic page scraping. Everything else stays search_snippet_only (Pipeline H) with the reason recorded.
+LANDING = [
+    ("github.com", "github_issues"), ("news.ycombinator.com", "hn_algolia"), ("reddit.com", "reddit"), ("linkedin.com", "linkedin"),
+    ("facebook.com", "facebook_groups"), ("upwork.com", "upwork"), ("peopleperhour.com", "peopleperhour"), ("freelancer.", "freelancer_com"),
+    ("malt.", "malt"), ("fiverr.com", "fiverr_briefs"), ("community.n8n.io", "n8n_community"), ("community.make.com", "make_community"),
+    ("community.zapier.com", "zapier_community"), ("stackoverflow.com", "stack_exchange"), ("stackexchange.com", "stack_exchange"),
+    ("indiehackers.com", "indie_hackers"), ("ukbusinessforums.co.uk", "uk_business_forums"), ("bark.com", "bark"), ("sortlist.", "sortlist"),
+    ("contractsfinder.service.gov.uk", "contracts_finder"), ("find-tender.service.gov.uk", "find_a_tender"), ("ted.europa.eu", "ted"),
+]
+_GH_ISSUE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/issues/(\d+)")
+
+
+def landing_source(url: str) -> Optional[str]:
+    host = url.split("/")[2].lower() if url.count("/") >= 2 else ""
+    for dom, key in LANDING:
+        if dom in host:
+            return key
+    return None
+
+
+def verify_landing(records: list[RawRecord], client: Optional[PoliteClient] = None, token: Optional[str] = None,
+                   max_requests: int = 20) -> tuple[list[RawRecord], RunLog]:
+    """Replace a snippet with source-verified content where the landing source offers a PERMITTED API (today: GitHub
+    issues). The verified record is the source's own data (provenance keeps the search query id). Others are annotated."""
+    from .github import API, _headers, item_to_record
+    log = RunLog("landing_verification")
+    client = client or PoliteClient(min_interval_s=2.2 if token else 6.5, check_robots=False)
+    out: list[RawRecord] = []
+    for r in records:
+        key = r.meta.get("landing_source")
+        m = _GH_ISSUE.match(r.url)
+        if key == "github_issues" and m and log.requests < max_requests and registry.may_collect("github_issues")[0]:
+            log.requests += 1
+            try:
+                it = client.get_json(f"{API}/repos/{m.group(1)}/{m.group(2)}/issues/{m.group(3)}", check_robots=False, headers=_headers(token))
+                v = item_to_record(it, None, r.fetched_at or "")
+                if v:
+                    v.query_id = r.query_id
+                    v.meta["discovered_via"] = r.meta.get("provider", "search")
+                    v.meta["query_category"] = r.meta.get("query_category")
+                    out.append(v)
+                    log.ok += 1
+                    continue
+            except FetchBlocked as exc:
+                log.failed += 1
+                log.event(kind="error", url_source=key, error_kind=exc.kind)
+        r.meta["landing_verification"] = ("not attempted: " + (registry.policy(key)["status"] if key else "unknown source; no permitted API")
+                                          if key != "github_issues" else "not attempted: budget")
+        out.append(r)
+    log.records = sum(1 for r in out if r.verification == "api_verified")
     return out, log

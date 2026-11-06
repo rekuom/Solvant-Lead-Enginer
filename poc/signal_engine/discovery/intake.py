@@ -33,14 +33,18 @@ STORE = PRIVATE / "intake.jsonl"
 FIELDS = ("source_key", "url", "post_date", "title", "text", "organisation", "stated_role", "country", "budget", "notes")
 
 # Known project-link patterns in alert e-mails, by registry key.
+_U = r"[^\s\"'<>)]+"
 EMAIL_LINKS = {
-    "upwork": re.compile(r"https://www\.upwork\.com/(?:jobs|freelance-jobs/apply)/[^\s\"'<>]+"),
-    "freelancer_com": re.compile(r"https://www\.freelancer\.(?:com|co\.uk)/projects/[^\s\"'<>]+"),
-    "peopleperhour": re.compile(r"https://www\.peopleperhour\.com/freelance-jobs/[^\s\"'<>]+"),
-    "malt": re.compile(r"https://www\.malt\.[a-z.]+/[^\s\"'<>]*(?:project|mission|offer)[^\s\"'<>]*"),
-    "fiverr_briefs": re.compile(r"https://www\.fiverr\.com/[^\s\"'<>]*brief[^\s\"'<>]*"),
-    "bark": re.compile(r"https://www\.bark\.com/[^\s\"'<>]+"),
+    "upwork": re.compile(rf"https://www\.upwork\.com/(?:jobs/|freelance-jobs/apply/|ab/proposals/job/|nx/search/jobs/details/|nx/proposals/job/){_U}"),
+    "freelancer_com": re.compile(rf"https://www\.freelancer\.[a-z.]{{2,6}}/projects/{_U}"),
+    "peopleperhour": re.compile(rf"https://www\.peopleperhour\.com/freelance-jobs/{_U}"),
+    "malt": re.compile(rf"https://www\.malt\.[a-z.]{{2,6}}/{_U}(?:project|mission|opportunit|offer){_U}|https://www\.malt\.[a-z.]{{2,6}}/(?:project|mission|opportunit|offer){_U}"),
+    "fiverr_briefs": re.compile(rf"https://www\.fiverr\.com/{_U}brief{_U}|https://www\.fiverr\.com/briefs{_U}"),
+    "bark": re.compile(rf"https://www\.bark\.com/{_U}"),
 }
+# Sender / link domains per platform: used when an alert's link format is not recognised.
+PLATFORM_DOMAINS = {"upwork": "upwork.com", "freelancer_com": "freelancer.", "peopleperhour": "peopleperhour.com", "malt": "malt.",
+                    "fiverr_briefs": "fiverr.com", "bark": "bark.com"}
 
 
 class IntakeError(ValueError):
@@ -51,7 +55,7 @@ def _verification(source_key: str) -> str:
     return "licensed_import" if registry.policy(source_key)["family"] == "lead_marketplace" else "user_submitted"
 
 
-def make_record(row: dict, origin: str) -> RawRecord:
+def make_record(row: dict, origin: str, fixture: bool = False) -> RawRecord:
     key = (row.get("source_key") or "").strip()
     ok, why = registry.may_intake(key)
     if not ok:
@@ -73,7 +77,7 @@ def make_record(row: dict, origin: str) -> RawRecord:
     if row.get("budget"):
         meta["budget"] = str(row["budget"])[:60]
     return RawRecord(source_key=key, source_id=canonical_url(url), url=url, title=(row.get("title") or text[:100]).strip(),
-                     body=clean_text(text, limit=1200), verification=_verification(key), created_at=date,
+                     body=clean_text(text, limit=1200), verification="fixture" if fixture else _verification(key), created_at=date,
                      state="unknown", fetched_at=datetime.now(timezone.utc).isoformat(), query_id=f"intake:{origin}",
                      organisation=(row.get("organisation") or "").strip() or None,
                      stated_role=(row.get("stated_role") or "").strip() or None,
@@ -95,6 +99,15 @@ def read_email(path: Path, source_key: Optional[str] = None) -> list[dict]:
     msg = email.message_from_bytes(Path(path).read_bytes(), policy=email_policy.default)
     body = msg.get_body(preferencelist=("plain", "html"))
     text = body.get_content() if body else ""
+    if body is not None and body.get_content_type() == "text/html":
+        text = re.sub(r"<br\s*/?>|</p>|</div>|</tr>", "\n", text, flags=re.I)
+        hrefs = " ".join(re.findall(r'href="([^"]+)"', text, flags=re.I))
+        text = re.sub(r"<[^>]+>", " ", text) + "\n" + hrefs
+    visible = re.sub(r"https?://\S+", " ", text.split("\n" + hrefs)[0] if body is not None and body.get_content_type() == "text/html" else text)
+    # Alert e-mails wrap links in tracking redirects (…?url=https%3A%2F%2Fwww.upwork.com%2Fjobs%2F…): unwrap them.
+    from urllib.parse import unquote
+    text = text + "\n" + unquote(unquote(text))
+    sender = str(msg.get("From", "")).lower()
     date = msg.get("Date")
     iso = None
     if date:
@@ -106,10 +119,25 @@ def read_email(path: Path, source_key: Optional[str] = None) -> list[dict]:
     for key, rx in EMAIL_LINKS.items():
         if source_key and key != source_key:
             continue
-        for m in dict.fromkeys(rx.findall(text)):
-            # take the text around the link as the excerpt
+        found = [u for u in dict.fromkeys(m.rstrip(").,") for m in rx.findall(text)) if "%" not in u]
+        if not found and PLATFORM_DOMAINS[key] in sender:
+            # unrecognised link format: keep the e-mail as one record with the first platform link, flagged for review
+            generic = re.findall(rf"https://[a-z.]*{re.escape(PLATFORM_DOMAINS[key])}[^\s\"'<>)]*", text)
+            if generic:
+                rows.append({"source_key": key, "url": generic[0], "post_date": None, "title": str(msg.get("Subject", ""))[:120],
+                             "text": re.sub(r"\s+", " ", text)[:600], "notes": "alert link format not recognised; verify the project URL manually"})
+            continue
+        for n, m in enumerate(found):
+            # excerpt: visible text around the link when the link is visible; otherwise the n-th visible block
             i = text.find(m)
-            ctx = re.sub(r"<[^>]+>", " ", text[max(0, i - 400): i + 200])
+            if 0 <= i < len(visible):
+                # segment = text after the previous project link up to the end of this link (no bleed between projects)
+                prev_end = max((text.find(x) + len(x) for x in found[:n] if 0 <= text.find(x) < i), default=0)
+                ctx = text[max(prev_end, i - 600): i + len(m)]
+            else:
+                blocks = [b.strip() for b in re.split(r"\n\s*\n|-{3,}", visible) if len(b.strip()) > 30]
+                ctx = blocks[n] if n < len(blocks) else visible[:600]
+            ctx = re.sub(r"<[^>]+>|https?://\S+", " ", ctx)
             rows.append({"source_key": key, "url": m.rstrip(").,"), "post_date": iso, "title": str(msg.get("Subject", ""))[:120],
                          "text": ctx, "notes": "imported from a user-authorised alert e-mail; alert date used as post date"})
     return rows
@@ -121,7 +149,7 @@ def load_store(path: Path = STORE) -> list[RawRecord]:
     return [RawRecord(**json.loads(l)) for l in path.read_text().splitlines() if l.strip()]
 
 
-def add(rows: Iterable[dict], origin: str, path: Path = STORE) -> dict:
+def add(rows: Iterable[dict], origin: str, path: Path = STORE, fixture: bool = False) -> dict:
     """Validate, deduplicate (URL and content) and append to the private store. Returns a summary."""
     existing = load_store(path)
     seen_url = {canonical_url(r.url) for r in existing}
@@ -129,7 +157,7 @@ def add(rows: Iterable[dict], origin: str, path: Path = STORE) -> dict:
     added, dups, errors = [], [], []
     for i, row in enumerate(rows):
         try:
-            rec = make_record(row, origin)
+            rec = make_record(row, origin, fixture=fixture)
         except IntakeError as exc:
             errors.append({"row": i, "error": str(exc)})
             continue

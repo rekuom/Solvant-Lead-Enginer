@@ -307,3 +307,168 @@ class PrivacyAndAudit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BraveIntegration(unittest.TestCase):
+    """Brave: no request unless explicitly enabled AND a key is configured; hard cap 100; snippets never verified;
+    output withheld unless storage rights are confirmed. Uses stubs only — no live request."""
+
+    def setUp(self):
+        import os
+        from signal_engine.discovery import run as runmod
+        self.run, self.tmp = runmod, tempfile.TemporaryDirectory()
+        self.old_out, runmod.OUT = runmod.OUT, Path(self.tmp.name)
+        self.old_key = os.environ.pop("BRAVE_SEARCH_API_KEY", None)
+
+    def tearDown(self):
+        import os
+        self.run.OUT = self.old_out
+        self.tmp.cleanup()
+        os.environ.pop("BRAVE_SEARCH_API_KEY", None)
+        if self.old_key is not None:
+            os.environ["BRAVE_SEARCH_API_KEY"] = self.old_key
+
+    def _fake_provider(self, calls):
+        class Fake:
+            name, registry_key = "brave", "web_search_brave"
+            def __init__(self, freshness="pm"):
+                pass
+            def search(self, q):
+                calls.append(q)
+                return [] if len(calls) > 1 else [
+                    __import__("signal_engine.discovery.connectors.search", fromlist=["SearchHit"]).SearchHit(
+                        "https://www.upwork.com/jobs/~01x", "Need n8n expert", "looking for someone to automate", "2 days", q.lang)]
+        return Fake
+
+    def test_not_enabled_means_plan_only(self):
+        import os
+        os.environ["BRAVE_SEARCH_API_KEY"] = "dummy-not-real"
+        calls = []
+        orig, self.run.BraveProvider = self.run.BraveProvider, self._fake_provider(calls)
+        try:
+            run = self.run.discover(["search:brave"], 30, 20, False, [])
+        finally:
+            self.run.BraveProvider = orig
+        log = run["logs"][0]
+        self.assertEqual((calls, log["requests"], log["planned_requests"]), ([], 0, 100))
+        self.assertAlmostEqual(log["est_cost_usd_if_run"], 0.5)
+
+    def test_enabled_without_key_is_skipped(self):
+        run = self.run.discover(["search:brave"], 30, 20, False, [], enable_brave=True)
+        self.assertEqual(run["logs"][0]["status"], "skipped")
+        self.assertIn("key", run["logs"][0]["detail"])
+
+    def test_enabled_with_key_respects_hard_cap_and_never_verifies_snippets(self):
+        calls = []
+        orig, self.run.BraveProvider = self.run.BraveProvider, self._fake_provider(calls)
+        try:
+            run = self.run.discover(["search:brave"], 30, 20, False, [], enable_brave=True, brave_max_requests=500)
+        finally:
+            self.run.BraveProvider = orig
+        self.assertEqual(len(calls), 100)                                   # hard cap, not 500
+        raw = self.run._read_raw(self.run.OUT / "raw_discovered.jsonl")
+        self.assertEqual(raw[0].verification, "search_snippet_only")
+        self.assertEqual(raw[0].meta["landing_source"], "upwork")
+        self.assertIn("not attempted", raw[0].meta["landing_verification"])
+        audit = self.run.report()
+        self.assertEqual(audit["stage_6_pipelines"]["H_RESEARCH_UNVERIFIED"], 1)
+        self.assertIn("withheld", audit["brave_record_level_output"])
+        private = (self.run.OUT / "opportunities_private.jsonl").read_text()
+        self.assertNotIn("upwork.com/jobs", private)                        # not retained without storage rights
+        self.assertIn("search:brave", audit["source_metrics"])
+
+    def test_brave_request_uses_documented_parameters(self):
+        from signal_engine.discovery.connectors.search import BraveProvider
+        seen = {}
+
+        class C:
+            def get_json(self, url, check_robots=None, headers=None):
+                seen["url"], seen["headers"] = url, headers
+                return {"web": {"results": [{"url": "https://example.invalid/a", "title": "t", "description": "d", "age": "1 day"}]}}
+        q = querylib.plan_web(max_requests=100)
+        uae = next(x for x in q if x.market == "UAE")
+        hits = BraveProvider(api_key="dummy", client=C()).search(uae)
+        self.assertEqual(seen["headers"], {"X-Subscription-Token": "dummy"})
+        for part in ("country=ALL", "search_lang=en", "count=20", "freshness=pm", "spellcheck=0"):
+            self.assertIn(part, seen["url"])
+        self.assertIn("Dubai", uae.query)
+        self.assertEqual(hits[0].url, "https://example.invalid/a")
+
+    def test_web_plan_prioritises_direct_requests_and_covers_markets(self):
+        p = querylib.plan_web(max_requests=100)
+        from collections import Counter
+        cats, mk = Counter(x.category for x in p), Counter(x.market for x in p)
+        direct = sum(cats[c] for c in ("explicit_project_request", "external_provider_search", "recommendation_request", "agency_partnership"))
+        self.assertGreaterEqual(direct, 75)
+        self.assertLessEqual(cats["problem_statement"] + cats["implementation_blocker"], 12)
+        for m in ("UK", "UAE", "Germany", "France", "Switzerland", "Norway", "Poland"):
+            self.assertIn(m, mk)
+        self.assertTrue(all(x.country in querylib.BRAVE_COUNTRIES for x in p))
+
+    def test_github_landing_page_verified_through_api_only(self):
+        from signal_engine.discovery.connectors.search import verify_landing
+        snip = RawRecord("web_search_brave", "u", "https://github.com/acme/app/issues/7", "Need contractor", "snippet",
+                         "search_snippet_only", meta={"landing_source": "github_issues", "provider": "brave", "query_category": "explicit_project_request"})
+        other = RawRecord("web_search_brave", "v", "https://www.reddit.com/r/x/1", "t", "s", "search_snippet_only", meta={"landing_source": "reddit"})
+
+        class C:
+            def get_json(self, url, check_robots=None, headers=None):
+                self.url = url
+                return {"html_url": "https://github.com/acme/app/issues/7", "title": "Looking for a contractor", "body": "Contact me",
+                        "repository_url": "https://api.github.com/repos/acme/app", "user": {"login": "x", "type": "User"}, "state": "open",
+                        "created_at": "2026-11-01T00:00:00Z", "node_id": "N7"}
+        c = C()
+        out, log = verify_landing([snip, other], client=c)
+        self.assertEqual(c.url, "https://api.github.com/repos/acme/app/issues/7")
+        self.assertEqual((out[0].verification, out[0].meta["discovered_via"]), ("api_verified", "brave"))
+        self.assertEqual(out[1].verification, "search_snippet_only")
+        self.assertIn("restricted", out[1].meta["landing_verification"])
+
+
+class MarketplaceAlertFixtures(unittest.TestCase):
+    """Synthetic alerts (poc/fixtures/alerts) — exercise parsing and classification; never stored as real leads."""
+    FX = Path(__file__).resolve().parents[1] / "fixtures" / "alerts"
+
+    def test_each_platform_parses_with_correct_source(self):
+        expect = {"upwork_alert.eml": ("upwork", 1), "freelancer_alert.eml": ("freelancer_com", 3), "peopleperhour_alert.eml": ("peopleperhour", 1),
+                  "malt_alert.eml": ("malt", 1), "fiverr_alert.eml": ("fiverr_briefs", 1), "unknown_format_alert.eml": ("upwork", 1)}
+        for f, (key, n) in expect.items():
+            rows = intake.read_email(self.FX / f)
+            self.assertEqual((len(rows), {r["source_key"] for r in rows}), (n, {key}), f)
+        up = intake.read_email(self.FX / "upwork_alert.eml")[0]
+        self.assertEqual(up["url"], "https://www.upwork.com/jobs/~0199synthetic01")          # tracking redirect unwrapped
+        self.assertIn("HubSpot", up["text"])
+        fl = intake.read_email(self.FX / "freelancer_alert.eml")
+        self.assertNotIn("Logo design", fl[0]["text"])                                      # no bleed between digest items
+        self.assertIn("not recognised", intake.read_email(self.FX / "unknown_format_alert.eml")[0]["notes"])
+
+    def test_fixture_import_is_never_a_lead(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Path(d) / "s.jsonl"
+            res = intake.add(intake.read_email(self.FX / "peopleperhour_alert.eml"), "email", path=store, fixture=True)
+            r = intake.load_store(store)[0]
+        self.assertEqual((res["added"], r.verification), (1, "fixture"))
+        self.assertEqual(route(r)[0], "EXCLUDED")
+
+    def test_same_alert_as_real_user_submission_routes_by_content(self):
+        """What a REAL alert with this content would become (verification stays user_submitted, never verified)."""
+        cases = {"peopleperhour_alert.eml": "B_FREELANCE_PROJECT", "malt_alert.eml": "B_FREELANCE_PROJECT",
+                 "upwork_alert.eml": "B_FREELANCE_PROJECT", "fiverr_alert.eml": "B_FREELANCE_PROJECT"}
+        for f, pipe in cases.items():
+            r = intake.make_record(intake.read_email(self.FX / f)[0], "email")
+            p, o = route(r)
+            self.assertEqual((r.verification, p), ("user_submitted", pipe), f"{f}: {o.pipeline_reason} {o.assessment.buying_intent.value}")
+            self.assertEqual(o.assessment.contact_permission.value, "in_platform_only")
+        rows = intake.read_email(self.FX / "freelancer_alert.eml")
+        routed = [route(intake.make_record(r, "email")) for r in rows]
+        self.assertEqual(routed[0][0], "B_FREELANCE_PROJECT")
+        self.assertEqual(routed[1][0], "EXCLUDED")                       # logo design: not Solvant work
+        # permanent role: never consultancy demand (generic Python job -> excluded as unrelated; an automation role -> F)
+        self.assertNotIn(routed[2][0], ("A_DIRECT_SME", "B_FREELANCE_PROJECT", "C_AGENCY_PARTNER"))
+        self.assertEqual(routed[2][1].assessment.engagement_type.value, "permanent_employment")
+
+
+class Persistence(unittest.TestCase):
+    def test_private_outputs_are_git_ignored(self):
+        gi = (Path(__file__).resolve().parents[2] / ".gitignore").read_text()
+        self.assertIn("poc/out/", gi)

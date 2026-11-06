@@ -9,6 +9,7 @@ Branch `claude/phase4-multisource-discovery` (not merged; awaiting review).
 | [experiments.md](experiments.md) | Actual results of experiments A–F |
 | [supabase-schema-proposal.sql](supabase-schema-proposal.sql) | Proposed schema (not applied) |
 | [dashboard-and-crm-spec.md](dashboard-and-crm-spec.md) | Dashboard and CRM functional spec |
+| [operations.md](operations.md) | **Brave key setup, marketplace alert setup, temporary vs persistent data, private storage design, first-run parameters** |
 | [roadmap.md](roadmap.md) | Commercial recommendation, cost and feasibility, rollout, blockers |
 
 ## Status of each capability
@@ -19,7 +20,7 @@ Branch `claude/phase4-multisource-discovery` (not merged; awaiting review).
 | GitHub Issues connector | ✅ | ✅ unit | ✅ 134 records (Claude Cloud) | — |
 | GitHub Discussions (GraphQL) | ✅ code | ✅ code path | ❌ | GraphQL blocked in Claude Cloud; runs in Actions (untested) |
 | HN connector incl. "Seeking freelancer" | ✅ code | ✅ unit | ❌ | Restricted: terms review + opt-in |
-| Open-web search (Brave adapter) | ✅ code | ✅ fixtures | ❌ | Key / payment |
+| Open-web search (Brave adapter) | ✅ code, checked against API reference | ✅ stubs/fixtures | ❌ | Your key; storage-rights terms |
 | RSS/Atom connector | ✅ | ✅ unit | ❌ | No feed with verified terms registered |
 | Multilingual query library and planner | ✅ | ✅ unit | ✅ (GitHub, English) | Non-English phrases need native review |
 | Marketplace / manual / e-mail / licensed intake | ✅ | ✅ unit | ❌ | Owner must supply alerts or captures |

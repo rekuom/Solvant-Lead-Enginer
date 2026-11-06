@@ -928,10 +928,12 @@
    "buying_intent_quality": "n/a",
    "marketplace_rules": null,
    "evidence": [
-    "https://brave.com/search/api/"
+    "https://api-dashboard.search.brave.com/api-reference/web/search/get",
+    "https://api-dashboard.search.brave.com/app/documentation/web-search/codes",
+    "https://api-docs.search.brave.software/resources/help"
    ],
    "review_date": "2026-11-06",
-   "notes": "Card required; reported ~$5/month free credits (~1,000 queries) then ~$4-5 per 1,000 (sources disagree). Adapter built, DISABLED without key."
+   "notes": "Card required; reported ~$5/month free credits then metered (~$5 per 1,000; sources disagree). Brave help: 'Data for Search'/'Data for AI' plans do not permit retaining any part of the API output (storage-rights plan required); no rights to linked third-party pages. Adapter built; runs only with BRAVE_SEARCH_API_KEY + explicit enable; record-level output withheld unless retention is permitted."
   },
   {
    "key": "web_search_google_cse",

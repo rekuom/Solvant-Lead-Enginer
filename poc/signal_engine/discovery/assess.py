@@ -161,6 +161,9 @@ def assess(rec: RawRecord, now: Optional[datetime] = None) -> Assessment:
     else:
         intent = Dimension("none_or_discussion", [], "medium")
 
+    # Freelance marketplaces: a project posting / matched brief IS a request to hire, whatever its wording.
+    if family == "freelance_marketplace" and intent.value in ("none_or_discussion", "problem_only") and c.service_relevance == "relevant":
+        intent = Dimension("explicit_hire_request", [f"project/brief posted on {pol['name']}"], "medium")
     # Developer-community posts: buying intent requires the poster to solicit outside help; a stray "paid work" /
     # "hire" inside an internal task, release note or product feature is not a request (live GitHub run, 2026-11-06).
     if family == "developer_community" and intent.value in ("explicit_hire_request", "quote_request", "recommendation_request") \
