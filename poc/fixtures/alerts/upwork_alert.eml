@@ -1,0 +1,9 @@
+From: Upwork <donotreply@upwork.com>
+To: owner@example.invalid
+Subject: New job matching your alert: n8n automation
+Date: Wed, 04 Nov 2026 09:15:00 +0000
+X-Fixture: SYNTHETIC test alert written for unit tests. Not a real opportunity.
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>SYNTHETIC FIXTURE</p><table><tr><td><b>n8n workflow to sync HubSpot deals into Xero invoices</b><br>Fixed price: $600. Small accounting firm in Manchester needs an n8n expert to connect HubSpot to Xero and stop manual invoicing.</td></tr><tr><td><a href="https://click.example.invalid/track?url=https%3A%2F%2Fwww.upwork.com%2Fjobs%2F~0199synthetic01">View job</a></td></tr></table></body></html>

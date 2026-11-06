@@ -15,6 +15,7 @@ Buying-intent intelligence for [Solvant.io](https://solvant.io). It finds organi
 | [docs/phase-2-plan.md](docs/phase-2-plan.md) | Validation step, exit criteria, build plan |
 | [docs/validation-2a.md](docs/validation-2a.md) | Phase 2A live validation: access probe, funnel, qualification, held-out set |
 | [docs/live-validation.md](docs/live-validation.md) | **Current rules**, markets, source permissions, queues, how to run the GitHub workflow |
+| [docs/phase4/README.md](docs/phase4/README.md) | **Phase 4**: multi-source discovery, source registry, pipelines A–H, intake, experiments, schema & dashboard spec |
 | [docs/classification-quality.md](docs/classification-quality.md) | Root-cause audit of run 42174857442, service-relevance filter, real held-out results |
 
 ## Proof of concept (`poc/`)
@@ -23,7 +24,8 @@ Stdlib-only Python 3.11+. Nothing to install.
 
 ```bash
 cd poc
-python3 -m unittest discover -s tests -v          # 89 tests
+python3 -m unittest discover -s tests -v          # 127 tests
+python3 -m signal_engine.discovery.run sources     # Phase 4 source registry
 python3 -m benchmark.run_real_eval --split heldout   # quality gate on real, manually labelled records
 python3 -m signal_engine.validate permissions     # which collectors are permitted
 python3 -m signal_engine.validate live --days 30 --max-records 100   # permitted sources only → CSV + Markdown
