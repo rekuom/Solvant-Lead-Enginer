@@ -10,12 +10,17 @@
 
 `country` only accepts Brave's documented list (about 35 countries plus `ALL`). The UAE, Ireland, Romania and Czechia therefore use `country=ALL` plus a location word in the query ("Dubai", "Ireland", "România", "Česko").
 
-**Before you add a key, know Brave's storage terms.** Brave's help page says the *Data for Search* and *Data for AI* plans **do not permit retaining any part of the API output**; only a *storage rights* plan does. So by default the engine:
-- processes Brave results only during the run;
-- publishes **counts only** (by market and intent category);
-- verifies a result against its original source only where that source has a permitted API (GitHub today). The verified record is then the source's data, not Brave's.
+**Before you add a key, know Brave's storage terms.** Brave's help page says the *Data for Search* and *Data for AI* plans **do not permit retaining any part of the API output**; only a *storage rights* plan does. Brave also grants no rights to the third-party pages its results link to.
 
-Tick `brave_retention_permitted` only if your plan includes storage rights.
+**What the engine does with Brave results (all plans):**
+1. Results are held **in memory** during the Discover step only.
+2. Where the linked page belongs to a source with a permitted API, the engine **re-fetches that page from its original publisher** and keeps the publisher's record (table in section 1a). The record is labelled `discovered_via: brave` plus our own query category, and nothing from Brave's result is copied into it.
+3. Every other result is reduced to **non-identifying counts**: totals, by landing-source family, by query category, by market. They're stored as `brave_aggregate` in `run_log.json` with no URL, title, snippet or domain list. The result itself is then discarded.
+4. Brave results are **never** written to `raw_discovered.jsonl`, the private opportunities file, the stage audit, the duplicate counts or any public report.
+
+**Retention needs two things.** The `brave_retention_permitted` tick alone does nothing. You must also set a **repository variable** (Settings → Secrets and variables → Actions → *Variables*) named `BRAVE_STORAGE_RIGHTS_ATTESTATION`, with the value `plan=<plan name>;confirmed_by=<who checked>;date=YYYY-MM-DD`, after confirming that your contract includes storage rights. Even then, snippets go only to a private runner-local review file, which is deleted when the job ends. They are never uploaded or published, because storage rights don't cover republishing third-party pages in a public repository.
+
+**Runner-local handling — honest limits.** Holding results in process memory for the few minutes of a run is how any API client consumes a response. It is the narrowest handling possible, but I can't give a legal opinion that it falls outside "retain". Brave's help page doesn't define a transient-processing window. **Ask Brave or check your contract** before relying on it commercially. The re-fetch step uses only our own copy of the URL to call the original publisher's API. If Brave considers even that a retained "part of the output", turn off `enable_brave` and use the manual route instead.
 
 **Setup (you do this; I didn't sign up or buy anything):**
 1. Create a Brave Search API account and choose a plan. A card is required, and pricing is metered.
@@ -28,7 +33,34 @@ Tick `brave_retention_permitted` only if your plan includes storage rights.
 - The hard cap is 100 requests per run.
 - Requests are weighted: explicit hire requests 30, provider searches 20, recommendations 15, agency partnerships 15, freelance hiring 10, pain/blockers 10.
 - They're spread across UK, UAE, Ireland and 16 European markets in 14 languages.
-- Snippets are always `search_snippet_only` and go to Pipeline H, never counted as buyers.
+- Snippets are never counted as buyers. Without storage rights they aren't kept at all, only counted.
+
+## 1a. From search hit to usable lead: permitted verification routes
+
+A search hit only tells you that a page exists. It becomes a usable lead only when its content comes from a source you're allowed to use:
+
+| Route | How | Resulting verification | Implemented |
+|---|---|---|---|
+| Original publisher's API | GitHub issue → GitHub REST API; Find a Tender notice → official OCDS API (`ocdsReleasePackages/{id}`, OGL) | `api_verified` (the publisher's data) | ✅ automatic during Discover |
+| Restricted publisher API | HN item → HN Algolia API, **only** with `allow_restricted=hn_algolia` after terms review | `api_verified` | ✅ off by default |
+| Approved RSS/Atom | A feed with verified terms in `data/feeds.json` | `api_verified` | ✅ connector; **no feed registered yet** |
+| User-authorised marketplace notifications | Your own Upwork/Malt/Fiverr/Freelancer alerts → `intake email` | `user_submitted` | ✅ (fixtures only so far) |
+| Licensed export | Bark or another lead vendor CSV you've paid for → `intake csv` | `licensed_import` | ✅ |
+| Manual source verification | You open the original URL yourself, copy the text from that page, then run `intake add … --verified-by <initials>` | `reviewer_verified` | ✅ new |
+
+**Which opportunity types can genuinely become usable leads today:**
+
+| Opportunity type | Realistic route | Usable? |
+|---|---|---|
+| Public tenders (UK) | Official OCDS APIs (Contracts Finder, Find a Tender) | **Yes**: automated and permitted, but formal and slow (Pipeline E) |
+| GitHub "looking for contractor/paid help" issues | GitHub API | **Yes technically**, but rare (0 buyers in 133 real records) |
+| Marketplace projects (Upwork, Freelancer, PPH, Malt, Fiverr) | Your own alerts → intake; reply in-platform only | **Yes**: the most realistic source of explicit, budgeted requests. Brave can't substitute for alerts (marketplace pages have no permitted API) |
+| LinkedIn / Facebook groups / forum posts by founders | Manual verification only (`--verified-by`) | **Yes, manually**: no permitted API; automated collection isn't allowed |
+| Reddit, n8n/Make community posts | Manual verification; API use only after a terms review and opt-in | **Manual only** for now |
+| Agency partnership pages, blog "hiring a partner" posts | Manual verification | **Manual only**; usually low intent |
+| Anything found only as a Brave snippet | — | **Not a lead.** Counts only, until a route above confirms it |
+
+**This is not yet a functioning commercial lead engine.** The automated, permitted path covers tenders and GitHub. The realistic buyer sources (marketplace alerts and manual capture) depend on you supplying them. No real alert or capture has been processed yet, and no lead from any route has been human-validated.
 
 ## 2. Marketplace alerts → intake
 
@@ -66,7 +98,8 @@ Synthetic examples of each alert type are in [`poc/fixtures/alerts/`](../../poc/
 |---|---|---|---|
 | `raw_discovered.jsonl`, `opportunities_private.jsonl`, review packets | Actions runner (`poc/out/discovery/`) | **Deleted when the job ends** | Yes (excerpts, hashed authors) — never uploaded |
 | Intake store `poc/out/private/intake.jsonl` | Wherever you run intake | Until you delete it (git-ignored) | Yes — keep private |
-| Redacted reports (`report_public.*`, `stage_audit.json`, `run_log.json`) | Actions **artifact** | **30 days**; downloadable by any signed-in user while the repo is public | No: actionable pipelines only, no handles, PII-redacted. Brave records only with storage rights |
+| Brave search results | Discover-step **memory only** | Discarded within the step (counts kept) | Not retained. With an attested storage-rights plan: `private_brave_review_attested.jsonl` on the runner only, deleted at job end, never uploaded |
+| Redacted reports (`report_public.*`, `stage_audit.json`, `run_log.json`) | Actions **artifact** | **30 days**; downloadable by any signed-in user while the repo is public | No: actionable pipelines only, no handles, emails/phones re-redacted, allow-listed metadata, duplicates as counts only, **never any Brave record**. A privacy gate (`scripts/policy_check.py --artifacts`) fails the job before upload if this is violated |
 | Job summary | Actions run page | Per the repo's log retention (default 90 days); public | Same redacted content |
 | Query log (repeat prevention) | Actions cache | Evicted after ~7 days unused | No (query ids and counts) |
 | Opportunities "saved permanently" | — | **Nowhere yet.** No database is connected. Nothing is permanently saved until private storage is approved | — |
@@ -100,7 +133,7 @@ Synthetic examples of each alert type are in [`poc/fixtures/alerts/`](../../poc/
 | enable_brave | ☐ until the key exists; then ✅ | |
 | brave_max_requests | `100` | Hard cap |
 | brave_freshness | `pm` | Last 31 days |
-| brave_retention_permitted | ☐ unless your plan has storage rights | |
+| brave_retention_permitted | ☐ | Has no effect without the `BRAVE_STORAGE_RIGHTS_ATTESTATION` variable, and even then snippets stay private |
 
 **B. Procurement comparison:** Actions → **Live lead validation** → Run workflow (`days=30`, `max_records=100`). Kept separate, Pipeline E.
 
@@ -114,7 +147,17 @@ Synthetic examples of each alert type are in [`poc/fixtures/alerts/`](../../poc/
 |---|---|---|
 | Marketplace alerts (Upwork, Freelancer, Malt, Fiverr, PPH) | **Yes, the most realistic** today: explicit, budgeted, current projects. Competitive and in-platform only | Platform design; mechanism tested on fixtures; **no real alerts imported yet** |
 | Manual capture (LinkedIn, groups, forums) | **Yes for UK/UAE founder-led SMEs**; costs time | Mechanism tested; no captures yet |
-| Brave Search | **Maybe**: finds public requests across sites, but results are snippets (H) and storage is restricted by plan | Not run (no key) |
+| Brave Search | **Discovery aid only**: counts show where demand appears; only GitHub/tender/HN hits can be re-fetched automatically. Everything else needs manual verification | Not run (no key) |
 | GitHub | **Weak** | 0 buyers in 133 real records |
 | Tenders | Real but formal and large; a separate channel | Phase 3 held-out: 14 of 15 surfaced relevant |
 | HN, n8n, Make boards | Promising but gated | Built; permission or terms review pending |
+
+## 7. Automated PR checks
+
+`.github/workflows/pr-checks.yml` runs on every pull request with **no secrets, no repository variables, no paid API calls and no collection**:
+- the unit, regression, public-artifact privacy and Brave non-retention tests;
+- `scripts/policy_check.py`, which validates the workflows: `contents: read` only, no schedules, no `pull_request_target`, live workflows manual-only, `BRAVE_SEARCH_API_KEY` referenced only in the Discover step, and no private files in artifact uploads. It also validates the source registry: restricted, unknown and prohibited sources can't be collected without opt-in, and Brave retention is impossible without attestation;
+- an offline end-to-end run: dry-run discovery, synthetic alert fixtures, then a report. It asserts that no fixture reaches the public report, then runs the artifact privacy gate;
+- the procurement classifier on the frozen dev split (report only; no tuning, and the held-out split is untouched).
+
+Live workflows (`multi-source-discovery`, `live-lead-validation`, `source-network-test`) remain `workflow_dispatch` only.

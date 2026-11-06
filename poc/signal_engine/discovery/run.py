@@ -15,7 +15,9 @@ Outputs (poc/out/discovery/, git-ignored):
   opportunities_private.jsonl  every assessed record (private: stays on the runner / local disk)
   report_public.md / .csv   REDACTED report (safe for Actions artifacts of a public repository)
   stage_audit.json          counts at every stage + omitted-record reasons (nothing silently dropped)
-  run_log.json              per-connector request log (failures are never hidden)
+  run_log.json              per-connector request log (failures are never hidden) + Brave counts (no URLs)
+  Brave search output is never written here unless storage rights are attested (then: private_brave_review_attested.jsonl,
+  never uploaded or reported).
 """
 
 from __future__ import annotations
@@ -34,9 +36,10 @@ from . import intake, querylib, registry
 from .assess import assess
 from .connectors import github as gh
 from .connectors import hn
-from .connectors.search import BraveProvider, ProviderDisabled, run_feeds, run_search, verify_landing
+from .connectors.search import (BraveProvider, ProviderDisabled, apply_brave_policy, brave_storage_rights_attested, run_feeds,
+                                run_search, verify_landing)
 from .models import PIPELINES, RawRecord
-from .privacy import public_view
+from .privacy import clean_text, public_view
 from .router import build, mark_spam_campaigns
 
 OUT = Path("out/discovery")
@@ -62,11 +65,12 @@ BRAVE_HARD_CAP = 100   # first-test ceiling; never exceeded regardless of input
 
 def discover(sources: list[str], since_days: int, max_requests: int, dry_run: bool, allow_restricted: list[str],
              include_discussions: bool = False, max_queries: int = 20, enable_brave: bool = False,
-             brave_max_requests: int = 100, brave_freshness: str = "pm") -> dict:
+             brave_max_requests: int = 100, brave_freshness: str = "pm", brave_retention_permitted: bool = False) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=since_days)).date().isoformat()
     qlog = querylib.QueryLog(OUT / "query_log.json")
     records: list[RawRecord] = []
     logs = []
+    brave_aggregate: Optional[dict] = None
     import time
     for src in sources:
         t0, n_logs = time.monotonic(), len(logs)
@@ -112,8 +116,17 @@ def discover(sources: list[str], since_days: int, max_requests: int, dry_run: bo
             got, log = run_search(prov, qs, max_requests=cap)
             log.event(kind="authorisation", detail="licensed provider: operator enabled with a configured key")
             import os
-            got, vlog = verify_landing(got, token=os.environ.get("GITHUB_TOKEN"), max_requests=20)
-            records += got
+            # Brave output is processed IN MEMORY only. Permitted original-source APIs re-fetch what they can; the
+            # rest is reduced to non-identifying counts. Nothing from Brave is written to disk unless storage rights are attested.
+            got, vlog = verify_landing(got, token=os.environ.get("GITHUB_TOKEN"), max_requests=20, allow_restricted=allow_restricted)
+            attested, why = brave_storage_rights_attested(brave_retention_permitted)
+            kept, brave_aggregate = apply_brave_policy(got, attested)
+            del got
+            brave_aggregate["retention_decision"] = why
+            records += [r for r in kept if r.source_key != "web_search_brave"]          # original-source data only
+            snippets = [r for r in kept if r.source_key == "web_search_brave"]
+            if snippets:   # only reachable with attested storage rights; private file, never uploaded or reported
+                _write_jsonl(OUT / "private_brave_review_attested.jsonl", [r.to_dict() for r in snippets])
             logs += [log.to_dict(), vlog.to_dict()]
         else:
             logs.append({"source": src, "status": "unknown_source", "requests": 0})
@@ -122,12 +135,16 @@ def discover(sources: list[str], since_days: int, max_requests: int, dry_run: bo
             l["duration_s"] = round(time.monotonic() - t0, 1) if l["duration_s"] == 0 else l["duration_s"]
     qlog.save()
     prev = _read_raw(OUT / "raw_discovered.jsonl")
-    merged = {r.url: r for r in prev}
+    merged = {r.url: r for r in prev if r.source_key != "web_search_brave"}
     for r in records:
+        if r.source_key == "web_search_brave":   # defence in depth: Brave output never enters the raw store
+            continue
         merged[r.url] = r
     _write_jsonl(OUT / "raw_discovered.jsonl", [r.to_dict() for r in merged.values()])
     run = {"run_at": datetime.now(timezone.utc).isoformat(), "dry_run": dry_run, "since": since, "sources": sources,
            "allow_restricted": allow_restricted, "logs": logs, "new_records": len(records), "total_raw": len(merged)}
+    if brave_aggregate is not None:
+        run["brave_aggregate"] = brave_aggregate     # counts only: no URL, title, snippet or domain list
     (OUT / "run_log.json").write_text(json.dumps(run, indent=1, default=str))
     return run
 
@@ -137,19 +154,22 @@ def build_opportunities(raw: list[RawRecord], now: Optional[datetime] = None) ->
     now = now or datetime.now(timezone.utc)
     audit: dict = {"stage_1_raw": len(raw), "by_source_raw": dict(Counter(r.source_key for r in raw))}
     # dedupe before ranking: canonical URL, then content fingerprint
-    seen_u, seen_f, uniq, dup_log = {}, {}, [], []
+    # Duplicates are reported as COUNTS only (by reason and source family): URLs of duplicates are never written anywhere.
+    seen_u, seen_f, uniq = {}, {}, []
+    dup_reason, dup_source = Counter(), Counter()
     for r in raw:
         cu, fp = canonical_url(r.url), fingerprint(r.title + " " + r.body)
-        if cu in seen_u:
-            dup_log.append({"url": r.url, "duplicate_of": seen_u[cu], "reason": "same_url"})
-            continue
-        if fp in seen_f and len(r.body) > 40:
-            dup_log.append({"url": r.url, "duplicate_of": seen_f[fp], "reason": "same_content"})
+        reason = "same_url" if cu in seen_u else "same_content" if (fp in seen_f and len(r.body) > 40) else None
+        if reason:
+            dup_reason[reason] += 1
+            dup_source[r.source_key] += 1
             continue
         seen_u[cu], seen_f[fp] = r.url, r.url
         uniq.append(r)
     audit["stage_2_after_dedupe"] = len(uniq)
-    audit["duplicates_removed"] = len(dup_log)
+    audit["duplicates_removed"] = sum(dup_reason.values())
+    audit["duplicates_by_reason"] = dict(dup_reason)
+    audit["duplicates_by_source"] = dict(dup_source)
     spam = mark_spam_campaigns(uniq)
     opps = []
     for r in uniq:
@@ -165,7 +185,6 @@ def build_opportunities(raw: list[RawRecord], now: Optional[datetime] = None) ->
     audit["stage_6_pipelines"] = {p: sum(1 for o in opps if o.pipeline == p) for p in DIRECT_ORDER}
     audit["noise_flags"] = dict(Counter(f for o in opps for f in o.assessment.noise_flags))
     audit["exclusion_reasons"] = dict(Counter(o.pipeline_reason for o in opps if o.pipeline == "EXCLUDED"))
-    audit["duplicates"] = dup_log[:200]
     return opps, audit
 
 
@@ -201,13 +220,17 @@ def source_metrics(opps: list, logs: list[dict]) -> dict:
     return out
 
 
-def report(shortlist: int = 20, brave_retention_permitted: bool = False) -> dict:
-    raw = _read_raw(OUT / "raw_discovered.jsonl") + intake.load_store()
+def report(shortlist: int = 20) -> dict:
+    # Brave snippets are never reported record-by-record, whatever the plan: public outputs carry only original-source
+    # records (independently verified) and Brave counts from run_log["brave_aggregate"].
+    raw = [r for r in _read_raw(OUT / "raw_discovered.jsonl") + intake.load_store() if r.source_key != "web_search_brave"]
     opps, audit = build_opportunities(raw)
     run_log = json.loads((OUT / "run_log.json").read_text()) if (OUT / "run_log.json").exists() else {"logs": []}
     audit["source_metrics"] = source_metrics(opps, run_log.get("logs", []))
-    audit["brave_record_level_output"] = "published" if brave_retention_permitted else \
-        "withheld: Brave Data-for-Search/AI plans do not permit retaining API output (counts only)"
+    audit["brave_record_level_output"] = ("never published: Brave results appear only as non-identifying counts; "
+                                          "records shown were re-fetched from the original source's permitted API")
+    if run_log.get("brave_aggregate"):
+        audit["brave_aggregate"] = run_log["brave_aggregate"]
     order = {p: i for i, p in enumerate(DIRECT_ORDER)}
     opps.sort(key=lambda o: (order[o.pipeline], -o.rank_score))
     # shortlist per pipeline; everything else is retained (private) and counted with a reason
@@ -223,12 +246,10 @@ def report(shortlist: int = 20, brave_retention_permitted: bool = False) -> dict
             omitted[o.pipeline] += 1
     audit["stage_7_shortlisted"] = dict(per)
     audit["omitted_beyond_shortlist_retained_privately"] = dict(omitted)
-    keep = [o for o in opps if brave_retention_permitted or o.record.source_key != "web_search_brave"]
-    _write_jsonl(OUT / "opportunities_private.jsonl", [o.to_dict() for o in keep])   # runner-local; deleted when the job ends
+    _write_jsonl(OUT / "opportunities_private.jsonl", [o.to_dict() for o in opps])   # runner-local; deleted when the job ends
     # PUBLIC repository: only actionable pipelines are listed record-by-record in public outputs;
     # research / excluded records appear as counts only (their detail stays in the private file).
-    shown = [o for o in shown if o.pipeline in PUBLIC_PIPELINES
-             and (brave_retention_permitted or o.record.source_key != "web_search_brave")]
+    shown = [o for o in shown if o.pipeline in PUBLIC_PIPELINES and o.record.verification != "fixture"]
     pub = [public_view(o.to_dict()) for o in shown]
     _write_jsonl(OUT / "report_public.jsonl", pub)
     with (OUT / "report_public.csv").open("w", newline="") as fh:
@@ -238,7 +259,7 @@ def report(shortlist: int = 20, brave_retention_permitted: bool = False) -> dict
                     "location", "budget", "noise_flags", "suggested_service", "missing_facts", "next_action", "pipeline_reason"])
         for o in shown:
             a = o.assessment
-            w.writerow([o.pipeline, o.rank_score, o.record.title[:140], o.record.url, o.record.source_key, o.record.created_at,
+            w.writerow([o.pipeline, o.rank_score, clean_text(o.record.title, limit=140), o.record.url, o.record.source_key, o.record.created_at,
                         o.record.state, o.record.verification, a.technical_relevance.value, a.buying_intent.value, a.engagement_type.value,
                         a.business_type.value, a.decision_maker_access.value, a.freshness.value, a.contact_permission.value,
                         a.location.value, "; ".join(a.commercial_potential.evidence), "; ".join(a.noise_flags), a.suggested_service,
@@ -251,7 +272,7 @@ def report(shortlist: int = 20, brave_retention_permitted: bool = False) -> dict
 def _markdown(shown: list, audit: dict) -> str:
     L = ["# Discovery report (redacted)", "", f"Generated {datetime.now(timezone.utc).isoformat()}. Author handles are hashed and omitted; "
          "excerpts are PII-redacted. No record here has been contacted.", "", "## Stage audit", "", "```json",
-         json.dumps({k: v for k, v in audit.items() if k != "duplicates"}, indent=1, default=str), "```"]
+         json.dumps(audit, indent=1, default=str), "```"]
     L += ["", "## Per-source results", "", "| Source | Status | Requests | Failed | Found | Verified | Genuine requests | Direct SME | Freelance | Agency | Contact route | Est. cost $ | Runtime s |",
           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for k, m in audit.get("source_metrics", {}).items():
@@ -274,7 +295,7 @@ def _markdown(shown: list, audit: dict) -> str:
               "|---|---|---|---|---|---|---|---|---|---|---|"]
         for o in rows:
             a = o.assessment
-            L.append(f"| {o.rank_score} | {o.record.title[:80].replace('|', '/')} | {o.record.source_key} | {(o.record.created_at or '')[:10]} | "
+            L.append(f"| {o.rank_score} | {clean_text(o.record.title, limit=80).replace('|', '/')} | {o.record.source_key} | {(o.record.created_at or '')[:10]} | "
                      f"{a.buying_intent.value} | {a.technical_relevance.value} | {a.engagement_type.value} | {a.business_type.value} | "
                      f"{a.contact_permission.value} | {o.pipeline_reason[:70].replace('|', '/')} | {o.record.url} |")
     return "\n".join(L) + "\n"
@@ -340,15 +361,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     d.add_argument("--enable-brave", action="store_true", help="explicitly allow live Brave requests (needs BRAVE_SEARCH_API_KEY)")
     d.add_argument("--brave-max-requests", type=int, default=100)
     d.add_argument("--brave-freshness", default="pm", choices=["pd", "pw", "pm", "py"])
+    d.add_argument("--brave-retention-permitted", action="store_true",
+                   help="request retention; ALSO needs the BRAVE_STORAGE_RIGHTS_ATTESTATION variable. Even then snippets stay private")
     it = sub.add_parser("intake"); isub = it.add_subparsers(dest="how", required=True)
     ia = isub.add_parser("add")
     for f in intake.FIELDS:
         ia.add_argument(f"--{f.replace('_', '-')}", required=f in ("source_key", "url"))
+    ia.add_argument("--verified-by", help="reviewer label: you opened the ORIGINAL URL and copied the text from it")
     for how in ("csv", "json", "email"):
         x = isub.add_parser(how); x.add_argument("file"); x.add_argument("--source-key")
         x.add_argument("--fixture", action="store_true", help="synthetic test data: stored as 'fixture', never a lead")
     r = sub.add_parser("report"); r.add_argument("--shortlist", type=int, default=20)
-    r.add_argument("--brave-retention-permitted", action="store_true", help="ONLY if your Brave plan includes storage rights")
     rp = sub.add_parser("review-packet"); rp.add_argument("--pipeline", default="A_DIRECT_SME"); rp.add_argument("--top", type=int, default=20)
     sr = sub.add_parser("score-review"); sr.add_argument("labels"); sr.add_argument("--pipeline", default="A_DIRECT_SME")
     a = p.parse_args(argv)
@@ -363,7 +386,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     elif a.cmd == "discover":
         run = discover([s.strip() for s in a.sources.split(",") if s.strip()], a.since_days, a.max_requests, a.dry_run,
                        [s.strip() for s in a.allow_restricted.split(",") if s.strip()], a.include_discussions, a.max_queries,
-                       a.enable_brave, a.brave_max_requests, a.brave_freshness)
+                       a.enable_brave, a.brave_max_requests, a.brave_freshness, a.brave_retention_permitted)
         print(json.dumps({k: v for k, v in run.items() if k != "logs"}, indent=1))
         for l in run["logs"]:
             print(f"  {l['source']}: {l['status']} requests={l.get('requests')} records={l.get('records')}")
@@ -381,9 +404,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         if a.how != "add" and getattr(a, "source_key", None):
             for r in rows:
                 r.setdefault("source_key", a.source_key)
-        print(json.dumps(intake.add(rows, a.how, fixture=getattr(a, "fixture", False)), indent=1))
+        print(json.dumps(intake.add(rows, a.how, fixture=getattr(a, "fixture", False), verified_by=getattr(a, "verified_by", None)), indent=1))
     elif a.cmd == "report":
-        print(json.dumps({k: v for k, v in report(a.shortlist, a.brave_retention_permitted).items() if k != "duplicates"}, indent=1, default=str))
+        print(json.dumps(report(a.shortlist), indent=1, default=str))
     elif a.cmd == "review-packet":
         print(review_packet(a.pipeline, a.top))
     elif a.cmd == "score-review":

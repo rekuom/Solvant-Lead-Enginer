@@ -55,8 +55,18 @@ def _verification(source_key: str) -> str:
     return "licensed_import" if registry.policy(source_key)["family"] == "lead_marketplace" else "user_submitted"
 
 
-def make_record(row: dict, origin: str, fixture: bool = False) -> RawRecord:
+_REVIEWER = re.compile(r"^[A-Za-z0-9 ._-]{2,40}$")
+
+
+def make_record(row: dict, origin: str, fixture: bool = False, verified_by: Optional[str] = None) -> RawRecord:
+    """verified_by: a reviewer label (role/initials, not an e-mail) confirming they opened the ORIGINAL URL and the text was
+    taken from that page. This is the manual verification route for search-discovered pages with no permitted API."""
     key = (row.get("source_key") or "").strip()
+    if verified_by is not None:
+        if fixture:
+            raise IntakeError("fixtures can never be reviewer-verified")
+        if not _REVIEWER.match(verified_by.strip()):
+            raise IntakeError("--verified-by must be a short reviewer label (2-40 letters/digits), not an e-mail")
     ok, why = registry.may_intake(key)
     if not ok:
         raise IntakeError(why)
@@ -76,8 +86,13 @@ def make_record(row: dict, origin: str, fixture: bool = False) -> RawRecord:
             "marketplace_rules": registry.marketplace_rules(key)}
     if row.get("budget"):
         meta["budget"] = str(row["budget"])[:60]
+    verification = "fixture" if fixture else _verification(key)
+    if verified_by is not None:
+        verification = "reviewer_verified"
+        meta.update(verified_by=verified_by.strip(), verified_at=datetime.now(timezone.utc).isoformat(),
+                    verification_route="manual: reviewer opened the original URL; text copied from the original page")
     return RawRecord(source_key=key, source_id=canonical_url(url), url=url, title=(row.get("title") or text[:100]).strip(),
-                     body=clean_text(text, limit=1200), verification="fixture" if fixture else _verification(key), created_at=date,
+                     body=clean_text(text, limit=1200), verification=verification, created_at=date,
                      state="unknown", fetched_at=datetime.now(timezone.utc).isoformat(), query_id=f"intake:{origin}",
                      organisation=(row.get("organisation") or "").strip() or None,
                      stated_role=(row.get("stated_role") or "").strip() or None,
@@ -149,7 +164,7 @@ def load_store(path: Path = STORE) -> list[RawRecord]:
     return [RawRecord(**json.loads(l)) for l in path.read_text().splitlines() if l.strip()]
 
 
-def add(rows: Iterable[dict], origin: str, path: Path = STORE, fixture: bool = False) -> dict:
+def add(rows: Iterable[dict], origin: str, path: Path = STORE, fixture: bool = False, verified_by: Optional[str] = None) -> dict:
     """Validate, deduplicate (URL and content) and append to the private store. Returns a summary."""
     existing = load_store(path)
     seen_url = {canonical_url(r.url) for r in existing}
@@ -157,7 +172,7 @@ def add(rows: Iterable[dict], origin: str, path: Path = STORE, fixture: bool = F
     added, dups, errors = [], [], []
     for i, row in enumerate(rows):
         try:
-            rec = make_record(row, origin, fixture=fixture)
+            rec = make_record(row, origin, fixture=fixture, verified_by=verified_by)
         except IntakeError as exc:
             errors.append({"row": i, "error": str(exc)})
             continue

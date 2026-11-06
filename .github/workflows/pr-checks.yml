@@ -1,0 +1,59 @@
+name: PR checks
+
+# Lightweight, offline checks for every pull request: no secrets, no repository variables, no paid API calls,
+# no collection. Live discovery / validation workflows stay manual (workflow_dispatch) and are NOT run here.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      NO_NETWORK_COLLECTION: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Unit, regression, privacy and Brave non-retention tests
+        working-directory: poc
+        run: python -m unittest discover -s tests -v
+
+      - name: Source policy and workflow validation
+        working-directory: poc
+        run: python scripts/policy_check.py
+
+      - name: Offline end-to-end (dry-run discovery + synthetic fixtures; nothing counted as real)
+        working-directory: poc
+        run: |
+          set -euo pipefail
+          python -m signal_engine.discovery.run discover --sources github_issues,feeds,search:brave --dry-run > /dev/null
+          for f in fixtures/alerts/*.eml; do python -m signal_engine.discovery.run intake email "$f" --fixture > /dev/null; done
+          python -m signal_engine.discovery.run report > /dev/null
+          python - <<'PY'
+          import json
+          rows = [json.loads(l) for l in open("out/discovery/report_public.jsonl") if l.strip()]
+          bad = [r for r in rows if r["record"]["verification"] == "fixture"]
+          assert not bad, f"{len(bad)} synthetic fixture records reached the public report"
+          audit = json.load(open("out/discovery/stage_audit.json"))
+          assert "duplicates" not in audit, "per-record duplicate log in public stage audit"
+          print("fixtures excluded from leads; stage audit counts-only: OK")
+          PY
+          python scripts/policy_check.py --artifacts out/discovery
+
+      - name: Procurement classifier on the frozen real-record dev split (report only; no tuning)
+        working-directory: poc
+        run: python -m benchmark.run_real_eval --split dev | tail -n 25

@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 from urllib.parse import quote
 
 from ...collectors.http import FetchBlocked, PoliteClient
@@ -215,34 +215,119 @@ def landing_source(url: str) -> Optional[str]:
     return None
 
 
+_FTS_NOTICE = re.compile(r"^https://www\.find-tender\.service\.gov\.uk/Notice/(\d{6}-\d{4})", re.I)
+_HN_ITEM = re.compile(r"^https://news\.ycombinator\.com/item\?id=(\d+)")
+
+# Which discovered URLs can become usable leads WITHOUT retaining Brave output: only those whose original publisher offers a
+# permitted API (verified independently here). Everything else needs a manual / alert / licensed route (see operations.md).
+VERIFICATION_ROUTES = {
+    "github_issues": "api:github (permitted)",
+    "find_a_tender": "api:find_a_tender single-notice OCDS (permitted, OGL)",
+    "hn_algolia": "api:hn items (restricted: only with allow_restricted=hn_algolia)",
+}
+
+
+def _provenance(v: RawRecord, snippet: RawRecord, route: str) -> RawRecord:
+    """Original-source record; the only link to the search is our own query id/category (not Brave output)."""
+    v.query_id = snippet.query_id
+    v.meta["discovered_via"] = snippet.meta.get("provider", "search")
+    v.meta["query_category"] = snippet.meta.get("query_category")
+    v.meta["verification_route"] = route
+    return v
+
+
 def verify_landing(records: list[RawRecord], client: Optional[PoliteClient] = None, token: Optional[str] = None,
-                   max_requests: int = 20) -> tuple[list[RawRecord], RunLog]:
-    """Replace a snippet with source-verified content where the landing source offers a PERMITTED API (today: GitHub
-    issues). The verified record is the source's own data (provenance keeps the search query id). Others are annotated."""
+                   max_requests: int = 20, allow_restricted: Iterable[str] = ()) -> tuple[list[RawRecord], RunLog]:
+    """In-memory: replace a search snippet with the ORIGINAL SOURCE's own record where that source has a permitted API.
+    Unverifiable snippets are returned annotated (the caller decides retention; see apply_brave_policy)."""
     from .github import API, _headers, item_to_record
+    from ..models import RawRecord as _RR
+    from ...collectors import ocds
+    from . import hn
     log = RunLog("landing_verification")
     client = client or PoliteClient(min_interval_s=2.2 if token else 6.5, check_robots=False)
     out: list[RawRecord] = []
     for r in records:
         key = r.meta.get("landing_source")
-        m = _GH_ISSUE.match(r.url)
-        if key == "github_issues" and m and log.requests < max_requests and registry.may_collect("github_issues")[0]:
-            log.requests += 1
-            try:
+        v: Optional[RawRecord] = None
+        try:
+            if log.requests >= max_requests:
+                pass
+            elif key == "github_issues" and _GH_ISSUE.match(r.url) and registry.may_collect("github_issues")[0]:
+                m = _GH_ISSUE.match(r.url)
+                log.requests += 1
                 it = client.get_json(f"{API}/repos/{m.group(1)}/{m.group(2)}/issues/{m.group(3)}", check_robots=False, headers=_headers(token))
                 v = item_to_record(it, None, r.fetched_at or "")
-                if v:
-                    v.query_id = r.query_id
-                    v.meta["discovered_via"] = r.meta.get("provider", "search")
-                    v.meta["query_category"] = r.meta.get("query_category")
-                    out.append(v)
-                    log.ok += 1
-                    continue
-            except FetchBlocked as exc:
-                log.failed += 1
-                log.event(kind="error", url_source=key, error_kind=exc.kind)
-        r.meta["landing_verification"] = ("not attempted: " + (registry.policy(key)["status"] if key else "unknown source; no permitted API")
-                                          if key != "github_issues" else "not attempted: budget")
+            elif key == "find_a_tender" and _FTS_NOTICE.match(r.url) and registry.may_collect("find_a_tender")[0]:
+                log.requests += 1
+                pkg = client.get_json(f"https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages/{_FTS_NOTICE.match(r.url).group(1)}",
+                                      check_robots=False)
+                sigs = ocds.parse_release_package(pkg if "releases" in pkg else {"releases": [pkg]}, "find_a_tender")
+                if sigs:
+                    sg = sigs[-1]
+                    v = _RR(source_key="find_a_tender", source_id=sg.source_id, url=sg.url, title=sg.title, body=sg.text,
+                            verification="api_verified", created_at=sg.posted_at, state="unknown", fetched_at=sg.collected_at,
+                            organisation=sg.organisation, country_hint="UK", meta={**sg.raw_meta, "deadline_at": sg.deadline_at})
+            elif key == "hn_algolia" and _HN_ITEM.match(r.url) and registry.may_collect("hn_algolia", allow_restricted)[0]:
+                log.requests += 1
+                it = client.get_json(f"https://hn.algolia.com/api/v1/items/{_HN_ITEM.match(r.url).group(1)}", check_robots=False)
+                v = hn.hit_to_record({"objectID": it.get("id"), "comment_text": it.get("text"), "title": it.get("title"),
+                                      "created_at": it.get("created_at"), "author": it.get("author")}, r.query_id or "", r.fetched_at or "")
+        except FetchBlocked as exc:
+            log.failed += 1
+            log.event(kind="error", landing_source=key, error_kind=exc.kind)
+        if v:
+            out.append(_provenance(v, r, VERIFICATION_ROUTES[key]))
+            log.ok += 1
+            continue
+        r.meta["landing_verification"] = (f"not verifiable via a permitted API ({registry.policy(key)['status'] if key else 'unknown source'})"
+                                          if key not in VERIFICATION_ROUTES else "not verified (budget, permission or no match)")
         out.append(r)
     log.records = sum(1 for r in out if r.verification == "api_verified")
     return out, log
+
+
+ATTESTATION_ENV = "BRAVE_STORAGE_RIGHTS_ATTESTATION"
+_ATTEST_FMT = re.compile(r"^plan=[A-Za-z0-9 ._-]{3,60};confirmed_by=[A-Za-z0-9 ._-]{2,60};date=\d{4}-\d{2}-\d{2}$")
+
+
+def brave_storage_rights_attested(flag: bool, env: Optional[dict] = None) -> tuple[bool, str]:
+    """A CLI/workflow tick alone can NEVER enable retention. It also needs an operator-configured attestation
+    (repository/environment VARIABLE, not set by any workflow input) in the form
+    'plan=<plan name>;confirmed_by=<operator>;date=YYYY-MM-DD' recording that the contracted plan includes storage rights."""
+    env = os.environ if env is None else env
+    if not flag:
+        return False, "retention not requested"
+    val = (env.get(ATTESTATION_ENV) or "").strip()
+    if not val:
+        return False, f"retention requested but {ATTESTATION_ENV} is not configured: treated as NO storage rights"
+    if not _ATTEST_FMT.match(val):
+        return False, f"{ATTESTATION_ENV} is malformed: treated as NO storage rights"
+    return True, "operator attested storage rights (snippets kept PRIVATE for manual review only; never published)"
+
+
+def apply_brave_policy(records: list[RawRecord], retention_attested: bool) -> tuple[list[RawRecord], dict]:
+    """Brave terms (Data for Search / Data for AI): no part of the API output may be retained.
+    -> keep ONLY records independently verified from the original source (that source's data and rights);
+    -> without an attested storage-rights plan, discard every snippet and keep non-identifying counts only;
+    -> with an attested plan, snippets are kept for PRIVATE manual review (never published)."""
+    from collections import Counter
+    verified = [r for r in records if r.verification == "api_verified" and r.source_key != "web_search_brave"]
+    snippets = [r for r in records if r.source_key == "web_search_brave"]
+    agg = {
+        "brave_results_total": len(records),
+        "independently_verified_original_source": len(verified),
+        "verified_by_source": dict(Counter(r.source_key for r in verified)),
+        "unverified_snippets": len(snippets),
+        "unverified_by_landing_source": dict(Counter(r.meta.get("landing_source") or "other_web" for r in snippets)),
+        "unverified_by_query_category": dict(Counter(r.meta.get("query_category") or "n/a" for r in snippets)),
+        "unverified_by_market": dict(Counter(r.meta.get("market") or "n/a" for r in snippets)),
+        "snippet_handling": ("kept privately for manual review (operator-attested storage rights)" if retention_attested
+                             else "discarded after counting (no storage rights): no URL, title or snippet retained"),
+    }
+    kept = verified + (snippets if retention_attested else [])
+    for r in kept:
+        if r.source_key == "web_search_brave":
+            r.meta["manual_review_queue"] = True
+            r.meta["public"] = False
+    return kept, agg

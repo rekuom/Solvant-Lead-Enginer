@@ -42,7 +42,7 @@ on:
         required: false
         default: "pm"
       brave_retention_permitted:
-        description: "Tick ONLY if your Brave plan includes storage rights. Otherwise Brave results are shown as counts only"
+        description: "Request retention. Has NO effect unless the repo VARIABLE BRAVE_STORAGE_RIGHTS_ATTESTATION is set; even then snippets stay private (never uploaded)"
         type: boolean
         default: false
 
@@ -118,20 +118,26 @@ jobs:
           BMAX: ${{ steps.in.outputs.bmax }}
           BFRESH: ${{ steps.in.outputs.bfresh }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}   # never logged; absent = Brave stays off
+          RETAIN: ${{ inputs.brave_retention_permitted && '--brave-retention-permitted' || '' }}
+          # Operator-configured attestation (Settings > Variables), format plan=..;confirmed_by=..;date=YYYY-MM-DD. Not a run input.
+          BRAVE_STORAGE_RIGHTS_ATTESTATION: ${{ vars.BRAVE_STORAGE_RIGHTS_ATTESTATION }}
         run: |
           set +e
           python -m signal_engine.discovery.run discover --sources "$SOURCES" --since-days "$DAYS" --max-requests "$MAX" \
-            --max-queries 40 --allow-restricted "$ALLOW" $DISC $DRY $BRAVE --brave-max-requests "$BMAX" --brave-freshness "$BFRESH"
+            --max-queries 40 --allow-restricted "$ALLOW" $DISC $DRY $BRAVE $RETAIN --brave-max-requests "$BMAX" --brave-freshness "$BFRESH"
           echo "exit=$?" >> "$GITHUB_OUTPUT"
 
       - name: Assess, route, rank (redacted public report)
         if: always()
         working-directory: poc
-        env:
-          RETAIN: ${{ inputs.brave_retention_permitted && '--brave-retention-permitted' || '' }}
         run: |
-          python -m signal_engine.discovery.run report --shortlist 20 $RETAIN > /dev/null
+          python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
           cat out/discovery/report_public.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Public-artifact privacy gate (no Brave output, no e-mail addresses)
+        if: always()
+        working-directory: poc
+        run: python scripts/policy_check.py --artifacts out/discovery
 
       - name: Upload REDACTED outputs only
         if: always()

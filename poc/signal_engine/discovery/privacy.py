@@ -30,10 +30,18 @@ def clean_text(raw: str, limit: int = 800) -> str:
     return _HANDLE.sub("@[user]", make_excerpt(raw or "", limit=limit))
 
 
+# Only these record.meta keys may appear in public artifacts (no reviewer names, notes, handles or raw platform payloads).
+PUBLIC_META = {"kind", "query_category", "discovered_via", "verification_route", "deadline_at", "tender_status", "cpv",
+               "budget", "landing_source", "market"}
+
+
 def public_view(opp: dict) -> dict:
-    """Redacted opportunity for public artifacts: no author refs, no stated roles tied to people, short excerpt."""
+    """Redacted opportunity for public artifacts: no author refs, no stated roles tied to people, short re-cleaned
+    excerpt (emails/phones/handles removed again), allow-listed meta only."""
     rec = dict(opp["record"])
     rec.pop("author_ref", None)
-    rec["body"] = (rec.get("body") or "")[:400]
     rec.pop("stated_role", None)
+    rec["title"] = clean_text(rec.get("title") or "", limit=200)
+    rec["body"] = clean_text(rec.get("body") or "", limit=400)
+    rec["meta"] = {k: v for k, v in (rec.get("meta") or {}).items() if k in PUBLIC_META}
     return {**opp, "record": rec}

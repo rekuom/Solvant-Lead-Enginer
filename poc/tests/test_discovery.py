@@ -358,7 +358,7 @@ class BraveIntegration(unittest.TestCase):
         self.assertEqual(run["logs"][0]["status"], "skipped")
         self.assertIn("key", run["logs"][0]["detail"])
 
-    def test_enabled_with_key_respects_hard_cap_and_never_verifies_snippets(self):
+    def test_enabled_with_key_respects_hard_cap_and_retains_no_brave_output(self):
         calls = []
         orig, self.run.BraveProvider = self.run.BraveProvider, self._fake_provider(calls)
         try:
@@ -366,16 +366,21 @@ class BraveIntegration(unittest.TestCase):
         finally:
             self.run.BraveProvider = orig
         self.assertEqual(len(calls), 100)                                   # hard cap, not 500
-        raw = self.run._read_raw(self.run.OUT / "raw_discovered.jsonl")
-        self.assertEqual(raw[0].verification, "search_snippet_only")
-        self.assertEqual(raw[0].meta["landing_source"], "upwork")
-        self.assertIn("not attempted", raw[0].meta["landing_verification"])
+        self.assertEqual(self.run._read_raw(self.run.OUT / "raw_discovered.jsonl"), [])   # snippet never stored
+        agg = run["brave_aggregate"]
+        self.assertEqual((agg["brave_results_total"], agg["unverified_snippets"], agg["independently_verified_original_source"]), (1, 1, 0))
+        self.assertEqual(agg["unverified_by_landing_source"], {"upwork": 1})
+        self.assertIn("discarded", agg["snippet_handling"])
         audit = self.run.report()
-        self.assertEqual(audit["stage_6_pipelines"]["H_RESEARCH_UNVERIFIED"], 1)
-        self.assertIn("withheld", audit["brave_record_level_output"])
-        private = (self.run.OUT / "opportunities_private.jsonl").read_text()
-        self.assertNotIn("upwork.com/jobs", private)                        # not retained without storage rights
+        self.assertEqual(audit["stage_6_pipelines"]["H_RESEARCH_UNVERIFIED"], 0)
+        self.assertIn("never published", audit["brave_record_level_output"])
+        self.assertEqual(audit["brave_aggregate"]["unverified_snippets"], 1)
         self.assertIn("search:brave", audit["source_metrics"])
+        for f in self.run.OUT.rglob("*"):
+            if f.is_file():
+                txt = f.read_text()
+                for leaked in ("upwork.com/jobs", "Need n8n expert", "looking for someone to automate"):
+                    self.assertNotIn(leaked, txt, f"{leaked!r} leaked into {f.name}")
 
     def test_brave_request_uses_documented_parameters(self):
         from signal_engine.discovery.connectors.search import BraveProvider
@@ -425,6 +430,172 @@ class BraveIntegration(unittest.TestCase):
         self.assertIn("restricted", out[1].meta["landing_verification"])
 
 
+class BraveNonRetention(unittest.TestCase):
+    """Regression: Brave output (Data for Search/AI plans: no retention) must never reach any file, public or private,
+    including duplicate-detection logs; only records re-fetched from an original source's permitted API survive."""
+    BRAVE_URLS = ["https://www.upwork.com/jobs/~01dup", "https://www.reddit.com/r/smallbusiness/comments/abc/need_crm_help",
+                  "https://example-agency.invalid/blog/hiring-automation-partner"]
+    GH = "https://github.com/acme/app/issues/7"
+
+    def setUp(self):
+        import os
+        from signal_engine.discovery import run as runmod
+        from signal_engine.discovery.connectors import search as smod
+        self.run, self.smod, self.tmp = runmod, smod, tempfile.TemporaryDirectory()
+        self.old_out, runmod.OUT = runmod.OUT, Path(self.tmp.name)
+        self.saved = {k: os.environ.pop(k, None) for k in ("BRAVE_SEARCH_API_KEY", smod.ATTESTATION_ENV)}
+        test = self
+
+        class Fake:
+            name, registry_key = "brave", "web_search_brave"
+            def __init__(self, freshness="pm"):
+                pass
+            def search(self, q):   # every query returns the SAME results -> heavy duplication across queries
+                return [smod.SearchHit(u, f"Brave title {i} SECRETTITLE", f"brave snippet {i} SECRETSNIPPET contact bob@example.com",
+                                       "1 day", q.lang) for i, u in enumerate(test.BRAVE_URLS + [test.GH, test.GH])]
+
+        class GHClient:
+            def get_json(self, url, check_robots=None, headers=None):
+                return {"html_url": test.GH, "title": "Looking for a contractor to build an n8n CRM integration",
+                        "body": "We are a small agency and need a freelancer for paid work.", "user": {"login": "someone", "type": "User"},
+                        "repository_url": "https://api.github.com/repos/acme/app", "state": "open",
+                        "created_at": "2026-11-01T00:00:00Z", "node_id": "N7"}
+        self.orig_prov, runmod.BraveProvider = runmod.BraveProvider, Fake
+        self.orig_vl = runmod.verify_landing
+        runmod.verify_landing = lambda recs, **kw: smod.verify_landing(recs, client=GHClient(), **kw)
+
+    def tearDown(self):
+        import os
+        self.run.OUT, self.run.BraveProvider, self.run.verify_landing = self.old_out, self.orig_prov, self.orig_vl
+        self.tmp.cleanup()
+        for k, v in self.saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+    def _all_files(self):
+        return {f.name: f.read_text() for f in self.run.OUT.rglob("*") if f.is_file()}
+
+    def _run(self, retention=False, n=5):
+        run = self.run.discover(["search:brave"], 30, 20, False, [], enable_brave=True, brave_max_requests=n,
+                                brave_retention_permitted=retention)
+        audit = self.run.report()
+        return run, audit
+
+    def test_duplicate_brave_results_leave_no_trace_in_any_file(self):
+        run, audit = self._run()
+        files = self._all_files()
+        self.assertIn("stage_audit.json", files)
+        self.assertNotIn("private_brave_review_attested.jsonl", files)
+        for name, txt in files.items():
+            for u in self.BRAVE_URLS:
+                self.assertNotIn(u, txt, f"Brave URL leaked into {name}")
+            for marker in ("SECRETTITLE", "SECRETSNIPPET", "bob@example.com", "example-agency.invalid", "reddit.com/r/"):
+                self.assertNotIn(marker, txt, f"{marker} leaked into {name}")
+        agg = run["brave_aggregate"]
+        self.assertEqual(agg["independently_verified_original_source"], 1)     # the GitHub issue, re-fetched via GitHub API
+        self.assertEqual(agg["unverified_snippets"], 3)
+        self.assertNotIn("duplicates", audit)                                  # no per-record duplicate log at all
+        self.assertIsInstance(audit["duplicates_by_reason"], dict)
+
+    def test_verified_original_source_record_is_kept_separately_from_brave(self):
+        self._run()
+        raw = self.run._read_raw(self.run.OUT / "raw_discovered.jsonl")
+        self.assertEqual([(r.source_key, r.verification) for r in raw], [("github_issues", "api_verified")])
+        self.assertEqual(raw[0].meta["discovered_via"], "brave")
+        self.assertIn("api:github", raw[0].meta["verification_route"])
+        self.assertNotIn("SECRET", json.dumps(raw[0].to_dict()))               # nothing copied from the Brave result
+
+    def test_retention_flag_alone_cannot_enable_retention(self):
+        run, _ = self._run(retention=True)
+        self.assertIn("not configured", run["brave_aggregate"]["retention_decision"])
+        self.assertNotIn("private_brave_review_attested.jsonl", self._all_files())
+
+    def test_malformed_attestation_is_rejected(self):
+        import os
+        os.environ[self.smod.ATTESTATION_ENV] = "yes"
+        run, _ = self._run(retention=True)
+        self.assertIn("malformed", run["brave_aggregate"]["retention_decision"])
+        self.assertNotIn("private_brave_review_attested.jsonl", self._all_files())
+
+    def test_attested_rights_keep_snippets_private_and_never_public(self):
+        import os
+        os.environ[self.smod.ATTESTATION_ENV] = "plan=Search Pro Storage;confirmed_by=ops lead;date=2026-11-06"
+        run, audit = self._run(retention=True)
+        files = self._all_files()
+        self.assertIn("private_brave_review_attested.jsonl", files)
+        for name in ("report_public.md", "report_public.csv", "report_public.jsonl", "stage_audit.json", "run_log.json",
+                     "raw_discovered.jsonl", "opportunities_private.jsonl", "query_log.json"):
+            for u in self.BRAVE_URLS:
+                self.assertNotIn(u, files.get(name, ""), f"{u} leaked into {name}")
+        self.assertIn("PRIVATE", run["brave_aggregate"]["retention_decision"])
+
+    def test_attestation_requires_flag_and_variable(self):
+        good = {self.smod.ATTESTATION_ENV: "plan=Storage;confirmed_by=ops;date=2026-11-06"}
+        self.assertFalse(self.smod.brave_storage_rights_attested(False, good)[0])
+        self.assertFalse(self.smod.brave_storage_rights_attested(True, {})[0])
+        self.assertTrue(self.smod.brave_storage_rights_attested(True, good)[0])
+
+    def test_workflow_upload_list_contains_no_private_files(self):
+        wf = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "multi-source-discovery.yml").read_text()
+        up = wf[wf.index("upload-artifact"):]
+        for private in ("raw_discovered", "opportunities_private", "private_brave", "intake.jsonl", "review_packet", "query_log"):
+            self.assertNotIn(private, up)
+
+
+class VerificationRoutes(unittest.TestCase):
+    def test_find_a_tender_notice_is_refetched_from_the_official_api(self):
+        from signal_engine.discovery.connectors.search import verify_landing
+        snip = RawRecord("web_search_brave", "x", "https://www.find-tender.service.gov.uk/Notice/012345-2026", "t", "s",
+                         "search_snippet_only", meta={"landing_source": "find_a_tender", "provider": "brave"})
+
+        class C:
+            def get_json(self, url, check_robots=None, headers=None):
+                self.url = url
+                return {"releases": [{"ocid": "ocds-h6vhtk-0abc", "id": "012345-2026", "date": "2026-11-01T00:00:00Z",
+                                      "buyer": {"name": "Example Council"},
+                                      "tender": {"title": "CRM workflow automation", "description": "Integration services",
+                                                 "tenderPeriod": {"endDate": "2026-12-01T00:00:00Z"}}}]}
+        c = C()
+        out, _ = verify_landing([snip], client=c)
+        self.assertEqual(c.url, "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages/012345-2026")
+        self.assertEqual((out[0].source_key, out[0].verification), ("find_a_tender", "api_verified"))
+        self.assertEqual(out[0].url, "https://www.find-tender.service.gov.uk/Notice/012345-2026")
+
+    def test_hn_is_not_verified_unless_explicitly_allowed(self):
+        from signal_engine.discovery.connectors.search import verify_landing
+        snip = RawRecord("web_search_brave", "h", "https://news.ycombinator.com/item?id=1", "t", "s", "search_snippet_only",
+                         meta={"landing_source": "hn_algolia"})
+
+        class C:
+            def get_json(self, *a, **k):
+                raise AssertionError("no HN request without allow_restricted")
+        out, log = verify_landing([snip], client=C())
+        self.assertEqual((out[0].verification, log.requests), ("search_snippet_only", 0))
+
+    def test_manual_reviewer_verification(self):
+        row = {"source_key": "linkedin", "url": "https://www.linkedin.com/posts/x", "text": "We need a CRM automation partner",
+               "post_date": "2026-11-05"}
+        rec = intake.make_record(row, "add", verified_by="RM")
+        self.assertEqual((rec.verification, rec.meta["verified_by"]), ("reviewer_verified", "RM"))
+        with self.assertRaises(intake.IntakeError):
+            intake.make_record(row, "add", fixture=True, verified_by="RM")
+        with self.assertRaises(intake.IntakeError):
+            intake.make_record(row, "add", verified_by="someone@example.com")
+
+
+class PublicArtifactPrivacy(unittest.TestCase):
+    def test_public_view_redacts_contacts_and_private_meta(self):
+        from signal_engine.discovery.privacy import public_view
+        o = {"record": {"title": "Need help, mail jane.doe@example.com", "body": "Call +44 7700 900123 or email jane.doe@example.com",
+                        "author_ref": "a_1", "stated_role": "founder",
+                        "meta": {"verified_by": "RM", "notes": "private", "query_category": "explicit_project_request"}}}
+        v = json.dumps(public_view(o))
+        for bad in ("jane.doe@example.com", "7700 900123", "a_1", "founder", "verified_by", "private"):
+            self.assertNotIn(bad, v)
+        self.assertIn("explicit_project_request", v)
+
+
 class MarketplaceAlertFixtures(unittest.TestCase):
     """Synthetic alerts (poc/fixtures/alerts) — exercise parsing and classification; never stored as real leads."""
     FX = Path(__file__).resolve().parents[1] / "fixtures" / "alerts"
@@ -472,3 +643,30 @@ class Persistence(unittest.TestCase):
     def test_private_outputs_are_git_ignored(self):
         gi = (Path(__file__).resolve().parents[2] / ".gitignore").read_text()
         self.assertIn("poc/out/", gi)
+
+
+class PolicyCheckScript(unittest.TestCase):
+    """scripts/policy_check.py: repository policy passes; seeded public-artifact violations are caught."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("policy_check", Path(__file__).resolve().parents[1] / "scripts" / "policy_check.py")
+        cls.pc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.pc)
+
+    def test_repository_workflows_and_registry_pass(self):
+        self.assertEqual(self.pc.check_workflows() + self.pc.check_registry(), [])
+
+    def test_seeded_artifact_violations_are_caught(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            rec = {"record": {"source_key": "web_search_brave", "verification": "search_snippet_only"}}
+            (d / "report_public.jsonl").write_text(json.dumps(rec) + "\n")
+            (d / "report_public.md").write_text("contact jane.doe@example.com or +44 7700 900123\n")
+            (d / "stage_audit.json").write_text(json.dumps({"duplicates": [{"url": "https://x.invalid"}]}))
+            (d / "run_log.json").write_text(json.dumps({"brave_aggregate": {"top": "https://x.invalid/a"}}))
+            errs = " | ".join(self.pc.check_artifacts(d))
+            for expected in ("Brave record", "e-mail", "phone", "duplicate log", "URL inside Brave aggregate"):
+                self.assertIn(expected, errs)
+            self.assertNotIn("jane.doe", errs)            # the checker itself must not echo the address
