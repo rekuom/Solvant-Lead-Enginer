@@ -88,6 +88,7 @@ class PoliteClient:
         self._sleep = sleep
         self._last: dict[str, float] = {}
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
+        self.max_retries_429 = 2
 
     def _robots_allows(self, url: str) -> bool:
         parts = urlsplit(url)
@@ -119,14 +120,27 @@ class PoliteClient:
         if wait > 0:
             self._sleep(wait)
         req = urllib.request.Request(url, headers={"User-Agent": self.user_agent, "Accept": "application/json"})
-        try:
-            with self._opener(req, 30) as resp:
-                body = resp.read()
-        except Exception as exc:
-            kind, status = classify_error(exc)
-            raise FetchBlocked(f"{host}: {kind}: {exc}", kind, status) from exc
-        finally:
-            self._last[host] = time.monotonic()
+        attempt = 0
+        while True:
+            try:
+                with self._opener(req, 30) as resp:
+                    body = resp.read()
+                break
+            except Exception as exc:
+                kind, status = classify_error(exc)
+                if kind == RATE_LIMITED and attempt < self.max_retries_429:
+                    # Honour Retry-After (capped), else back off 10s, 20s.
+                    retry_after = None
+                    try:
+                        retry_after = float(getattr(exc, "headers", {}).get("Retry-After"))
+                    except (TypeError, ValueError):
+                        pass
+                    attempt += 1
+                    self._sleep(min(30.0, retry_after if retry_after is not None else 10.0 * attempt))
+                    continue
+                raise FetchBlocked(f"{host}: {kind}: {exc}", kind, status) from exc
+            finally:
+                self._last[host] = time.monotonic()
         try:
             return json.loads(body)
         except ValueError as exc:

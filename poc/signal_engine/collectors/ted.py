@@ -29,9 +29,12 @@ FULL_FIELDS = ["publication-number", "notice-title", "publication-date", "buyer-
                "notice-type", "deadline-receipt-tender-date-lot", "description-lot", "classification-cpv"]
 MINIMAL_FIELDS = ["publication-number", "notice-title", "publication-date", "buyer-name", "buyer-country"]
 
+# Bare "CRM" removed: in run 42174857442 it matched cardiac rhythm management devices, certified reference
+# materials and a radar model. Use unambiguous phrases; relevance is still screened client-side.
 KEYWORDS = ('"workflow automation"', '"process automation"', '"robotic process automation"', '"artificial intelligence"',
-            '"AI solution"', '"chatbot"', '"document processing"', '"data extraction"', '"CRM"', '"system integration"',
-            '"Power Automate"', '"low-code"', '"intelligent automation"', '"machine learning"')
+            '"AI solution"', '"chatbot"', '"document processing"', '"data extraction"', '"CRM system"',
+            '"customer relationship management"', '"Dynamics 365"', '"Salesforce"', '"system integration"',
+            '"Power Automate"', '"low-code"', '"intelligent automation"', '"machine learning"', '"software development"')
 
 
 def build_query(since_yyyymmdd: str, keywords: Iterable[str] = KEYWORDS) -> str:

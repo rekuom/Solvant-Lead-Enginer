@@ -44,7 +44,7 @@ SOURCES: dict[str, SourcePolicy] = {
         contact_permitted=True,
         attribution="Contains public sector information licensed under the Open Government Licence v3.0.",
         access_notes="HTML notice pages return 403 to automated clients (bot protection): use the API only; humans open the notice URL in a browser.",
-        max_requests_per_run=12, tags=("tender", "UK"),
+        max_requests_per_run=5, tags=("tender", "UK"),
     ),
     "find_a_tender": SourcePolicy(
         key="find_a_tender", name="UK Find a Tender (OCDS API)",

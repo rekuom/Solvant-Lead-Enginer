@@ -374,7 +374,10 @@ class ReportTests(unittest.TestCase):
         ]
         recs, funnel, md = validate.build_report(recs_in, now=NOW)
         self.assertEqual(funnel["genuine_records"], 4)
-        self.assertEqual(funnel["by_queue"][PRIORITY_A], 2)
+        # The direct post is Priority A; the relevant tender is Priority B because a published notice needs its
+        # procedure checked before it counts as a contactable buyer.
+        self.assertEqual(funnel["by_queue"][PRIORITY_A], 1)
+        self.assertEqual(funnel["by_queue"][PRIORITY_B], 1)
         self.assertEqual(funnel["by_queue"][PRIORITY_C], 1)
         self.assertEqual(funnel["by_queue"][UNVERIFIED], 1)
         for title in ("Priority A — Immediate opportunities", "Priority B — Promising opportunities",

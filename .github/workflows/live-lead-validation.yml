@@ -59,6 +59,12 @@ jobs:
         working-directory: poc
         run: python -m unittest discover -s tests -v
 
+      - name: "1b) Classification quality gate on real, manually labelled records"
+        working-directory: poc
+        run: |
+          echo "## Quality gate (real records from run 42174857442)" >> "$GITHUB_STEP_SUMMARY"
+          python -m benchmark.run_real_eval --split heldout | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: "2) Source permissions (only PERMITTED collectors will run)"
         working-directory: poc
         run: |
@@ -99,18 +105,23 @@ jobs:
           print(f"- Verified by market: `{json.dumps(f['genuine_by_market'])}` · by source: `{json.dumps(f['genuine_by_source'])}`")
           print(f"- Verified in target markets, last 30 days: **{f['verified_in_target_markets_last_30d']}**")
           print(f"- Verified external-provider demand (Tier A/B): **{f['verified_external_provider_demand']}**")
-          print(f"- Priority A/B with a permitted contact route: **{f['verified_with_permitted_contact_route']}**\n")
+          print(f"- Priority A/B with a permitted contact route: **{f['verified_with_permitted_contact_route']}**")
+          print(f"- Relevant tenders needing a procedure check before contact: **{f.get('relevant_tenders_needing_process_check', 0)}**")
+          print(f"- Verified by service relevance: `{json.dumps(f.get('genuine_by_service_relevance', {}))}`")
+          print(f"- Dropped by cap, by relevance: `{json.dumps(f.get('dropped_by_cap_by_relevance', {}))}`\n")
           rows = [json.loads(l) for l in (out / "leads.jsonl").read_text().splitlines() if l.strip()]
           for queue, title in (("PRIORITY_A", "Priority A"), ("PRIORITY_B", "Priority B")):
               sel = [r for r in rows if r["queue"] == queue]
               print(f"### {title} ({len(sel)})\n")
               if not sel:
                   print("_None._\n"); continue
-              print("| Organisation | Country | Title | Published | Tier | Service | URL |\n|---|---|---|---|---|---|---|")
+              print("| Organisation | Country | Title | Published | Relevance | Stage | Service | URL |\n|---|---|---|---|---|---|---|---|")
               for r in sel[:50]:
                   t = r["title"].replace("|", "/")[:90]
                   o = r["organisation"].replace("|", "/")[:50]
-                  print(f"| {o} | {r['country']} | {t} | {r['published_at'][:10]} | {r['intent_tier']} | {r['potential_service'][:50]} | {r['url']} |")
+                  ev = "; ".join(r.get("relevance_evidence", [])[:2]).replace("|", "/")[:60]
+                  print(f"| {o} | {r['country']} | {t} | {r['published_at'][:10]} | {r.get('service_relevance')} ({ev}) | "
+                        f"{r.get('procurement_stage')} | {r['potential_service'][:50]} | {r['url']} |")
               print()
           log = [json.loads(l) for l in (out / "discover_log.jsonl").read_text().splitlines() if l.strip()]
           print("### Collector results\n")
@@ -131,6 +142,7 @@ jobs:
             poc/out/validation/lead_report.md
             poc/out/validation/funnel.json
             poc/out/validation/leads.jsonl
+            poc/out/validation/all_records.jsonl
             poc/out/validation/discover_log.jsonl
             poc/out/validation/verify_log.jsonl
             permission-review/

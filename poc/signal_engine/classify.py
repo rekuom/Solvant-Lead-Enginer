@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from . import markets
+from .relevance import Relevance, assess
 from .models import Signal
 
 TIERS = ("A", "B", "C", "D", "REJECT")
@@ -76,19 +77,28 @@ EXTERNAL_HELP = [
 ]
 
 SCOPE = [
-    ("automation", _rx(r"\bautomat\w*\b")),
+    # "automatic"/"automated" (doors, analysers) are NOT automation services
+    ("automation", _rx(r"\bautomat(?:e|es|ing|ion|ions|ise|ize|isierung)\b")),
     ("workflow", _rx(r"\bworkflows?\b")),
     ("platform", _rx(r"\bzapier\b|\bmake\.com\b|\bmake\s+(?:expert|professional|pro|scenario)s?\b|\bn8n\b|\bpower\s+automate\b|\bpower\s+platform\b|\blow[\s-]?code\b|\bno[\s-]?code\b")),
     ("ai_development", _rx(r"\bai\s+(?:development|implementation|solutions?|services|integration|assistants?|models?|platform|tools?|use\s+cases?)\b|\bartificial\s+intelligence\b|\bmachine\s+learning\b|\bgenerative\s+ai\b|\bgen\s?ai\b|\bllms?\b|\blarge\s+language\s+models?\b|\bnatural\s+language\s+processing\b|\bcopilot\b")),
     ("document_processing", _rx(r"\bdocument\s+(?:processing|automation|capture|extraction|management)\b|\bdata\s+extraction\b|\bocr\b|\bintelligent\s+document\b|\bidp\b|\bscanning\s+and\s+indexing\b")),
     ("systems_integration", _rx(r"\bsystems?\s+integration\b|\berp\b|\bsoftware\s+integration\b|\bintegration\s+(?:services|platform|layer)\b|\bmiddleware\b|\bipaas\b")),
-    ("integration", _rx(r"\bintegrat\w*\b|\bconnect(?:ing)?\s+(?:our|my|the)?\s*\w*\s*(?:crm|systems?|apis?|tools?)\b|\bapi\b|\bwebhooks?\b")),
-    ("crm", _rx(r"\bcrm\b|\bhubspot\b|\bsalesforce\b|\bpipedrive\b|\bzoho\b|\bgohighlevel\b|\bghl\b")),
+    # "integrated" (integrated care, integrated contract) is NOT integration work
+    ("integration", _rx(r"\bintegrat(?:e|es|ing|ion|ions)\s+(?:\w+\s+){0,2}(?:with|into|between)\b|\bsystems?\s+integration\b|\bapi\s+integration\b|"
+                        r"\bconnect(?:ing)?\s+(?:our|my|the)?\s*\w*\s*(?:crm|systems?|apis?|tools?)\b|\bwebhooks?\b|\bintegrations\b|\bapis\b")),
+    # bare "CRM" is ambiguous (cardiac rhythm management, certified reference material): needs software context
+    ("crm", _rx(r"\bcrm\s+(?:system|software|platform|tool|data|integration|automation|records?|pipeline|consultants?|experts?|specialists?|developers?|agency|partners?|implementation|migration|set[\s-]?up)s?\b|\b(?:our|my|the|a|new)\s+crm\b|"
+                r"\bhubspot\b|\bsalesforce\b|\bpipedrive\b|\bzoho\b|\bgohighlevel\b|\bghl\b|\bcopper\s+crm\b|\bcustomer\s+relationship\s+management\b")),
     ("finance_ops", _rx(r"\binvoic\w*\b|\bbookkeeping\b|\bxero\b|\bquickbooks\b|\bsage\b|\breconcil\w*\b|\baccounts?\s+(?:payable|receivable)\b|\baccounting\s+automation\b|\bfinance\s+automation\b|\bexpense\s+management\b|\bpurchase[\s-]to[\s-]pay\b|\bp2p\b")),
-    ("reporting", _rx(r"\breporting\b|\breports?\b|\bdashboards?\b")),
+    # "report(s)/reporting" alone (inspection reports, MRI reporting) is NOT reporting automation
+    ("reporting", _rx(r"\b(?:automated|automatic|manual|monthly|weekly|management|sales|financial)\s+reporting\b|\breporting\s+(?:automation|dashboards?|tools?|pipeline)\b|"
+                      r"\bdashboards?\b|\bpower\s+bi\b|\blooker\b")),
     ("ai_agent", _rx(r"\bai\s+agents?\b|\bchat\s?bots?\b|\brpa\b|\brobotic\s+process\b|\bintelligent\s+automation\b|\bopenai\b|\bllm\b")),
-    ("data_ops", _rx(r"\bspreadsheets?\b|\bdata\s+entry\b|\bexcel\b|\bgoogle\s+sheets\b")),
-    ("lead_ops", _rx(r"\blead\s+(?:management|capture|gen\w*|routing)\b|\bbooking\b|\bonboarding\b|\boutreach\b")),
+    ("data_ops", _rx(r"\bspreadsheets?\b|\bdata\s+entry\b|\bexcel\s+(?:sheets?|files?|spreadsheets?|macros?)\b|\bgoogle\s+sheets\b")),
+    # "outreach"/"onboarding" alone (outreach services, supplier onboarding rounds) are NOT sales ops
+    ("lead_ops", _rx(r"\blead\s+(?:management|capture|gen\w*|routing)\b|\bbooking\s+(?:system|automation|workflow)\b|\b(?:client|customer)\s+onboarding\s+(?:workflow|automation|process)\b|"
+                     r"\b(?:email|sales|cold)\s+outreach\b")),
 ]
 
 BUDGET_OR_PROJECT = [
@@ -197,6 +207,9 @@ class Classification:
     complexity: str = "unknown"                            # low / medium / high
     delivery_flags: list[str] = field(default_factory=list)
     partnership_opportunity: bool = False
+    service_relevance: str = "unknown"                     # relevant / product_only / not_relevant / uncertain
+    deliverable_type: str = "unknown"
+    relevance: dict = field(default_factory=dict)          # full Relevance record (evidence for/against, uncertainty)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -269,13 +282,10 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
         text,
     )
     is_tender = sig.raw_meta.get("kind") == "tender"
+    rel = assess(sig)  # service relevance of the DELIVERABLE (independent of buying intent)
     if is_tender:
+        # A notice proves the buyer is procuring SOMETHING; whether it is Solvant-relevant is decided by `rel`.
         hits["external_help"].append(Evidence("public_tender", "external_help", "public procurement notice"))
-        hits["budget_or_project"].append(Evidence("tender_project", "budget_or_project", "formal procurement = defined project"))
-        if sig.value_amount:
-            hits["budget_or_project"].append(
-                Evidence("tender_value", "budget_or_project", f"{sig.value_currency or ''} {sig.value_amount:,.0f}".strip())
-            )
     ongoing = ONGOING.search(text)
     freelance = FREELANCE_ENGAGEMENT.search(text)
     if freelance and not ongoing:
@@ -283,7 +293,7 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
         hits["recruitment"] = [e for e in hits["recruitment"] if e.feature != "job_title_hiring"]
         if not hits["external_help"]:
             hits["external_help"].append(Evidence("freelance_engagement", "external_help", freelance.group(0)))
-    product_tender = bool(is_tender and PRODUCT_PROCUREMENT.search(sig.title) and not SERVICE_PROCUREMENT.search(sig.title))
+    product_tender = bool(is_tender and rel.verdict == "product_only")
     ai_interest = AI_INTEREST.search(text)
     # Tier A needs to know WHAT will be automated, not just the word "automation".
     specific_scope = any(e.feature != "automation" for e in hits["scope"])
@@ -297,6 +307,8 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
     if has["off_topic"]:
         tier, reject_reason = "REJECT", "unrelated_physical_or_industrial_automation"
         reasons.append("Mentions physical/industrial automation, which Solvant does not sell.")
+    elif is_tender:
+        tier, reject_reason = _tender_tier(rel, reasons)
     elif not has["scope"] and not has["problem"] and ai_interest and not has["vendor"] and not has["recruitment"]:
         tier = "D"
         evidence.append(Evidence("ai_interest", "weak", ai_interest.group(0)))
@@ -339,12 +351,29 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
         tier = "D"
         reasons.append("Mentions automation/AI topics only; buying intent is an inference.")
 
+    # Direct posts: a specific scope phrase in the buyer's own words (tightened rules above) establishes relevance.
+    if not is_tender and hits["scope"] and rel.verdict in ("uncertain", "not_relevant") and not has["off_topic"]:
+        rel.verdict = "relevant"
+        rel.deliverable_type = "software_services"
+        rel.positive += [f"request_scope: {e.matched}" for e in hits["scope"]]
+        rel.uncertainty = []
+    # Direct posts: the (tightened) scope rules already require specific automation/CRM/AI/integration wording.
+    # If neither they nor the relevance model find a Solvant deliverable, the post cannot rank above D.
+    if not is_tender and tier in ("A", "B", "C") and rel.verdict == "not_relevant" and not hits["scope"]:
+        tier = "D"
+        reasons.append("Service relevance not established: the deliverable is not clearly software, AI, automation, CRM or integration work.")
+
     # --- score ----------------------------------------------------------------
+    # Rank by evidence of RELEVANT demand. Contract value and "it is a tender" never raise the score.
     score = TIER_BASE[tier]
     if tier != "REJECT":
-        score += 4 * (len(hits["scope"]) - 1)
-        score += 5 * len(hits["budget_or_project"])
-        score += 3 * max(0, len(hits["external_help"]) - 1)
+        score += 6 * rel.strength
+        score += 3 * max(0, len({e.feature for e in hits["scope"]}) - 1)
+        if not is_tender:
+            score += 5 * len(hits["budget_or_project"])
+            score += 3 * max(0, len(hits["external_help"]) - 1)
+        if rel.verdict == "uncertain":
+            score -= 5
         score = max(TIER_BASE[tier], min(TIER_CAP[tier], score))
 
     # --- location (place evidence only; never currency) ------------------------
@@ -423,7 +452,27 @@ def classify(sig: Signal, now: Optional[datetime] = None) -> Classification:
         complexity=complexity,
         delivery_flags=delivery,
         partnership_opportunity=partnership,
+        service_relevance=rel.verdict,
+        deliverable_type=rel.deliverable_type,
+        relevance=rel.to_dict(),
     )
+
+
+def _tender_tier(rel: Relevance, reasons: list[str]) -> tuple[str, Optional[str]]:
+    """A procurement notice is buying intent; the tier depends on WHAT is being bought."""
+    ev = "; ".join(rel.positive[:3])
+    if rel.verdict == "relevant":
+        reasons.append(f"Formal procurement whose deliverable is Solvant-relevant services ({ev}).")
+        return "A", None
+    if rel.verdict == "product_only":
+        reasons.append(f"Procurement of a software product / licence / subscription with no service scope ({ev}): vendor or reseller territory.")
+        return "D", None
+    if rel.verdict == "uncertain":
+        reasons.append("Service relevance uncertain: " + "; ".join(rel.uncertainty or ["deliverable not described clearly"]))
+        return "C", None
+    against = "; ".join((rel.negative + rel.traps)[:3]) or "no software, AI, automation, CRM or integration deliverable"
+    reasons.append(f"Procurement is unrelated to Solvant's services ({rel.deliverable_type}: {against}).")
+    return "REJECT", "unrelated_procurement"
 
 
 def locate(sig: Signal, text: Optional[str] = None) -> "markets.Location":

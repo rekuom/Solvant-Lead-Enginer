@@ -16,15 +16,18 @@ Status: **ready to run. No live leads have been collected yet.** Counts appear o
 | **Safeguards kept** | Vendor adverts, employment ads, unrelated or physical automation, closed or outdated items and synthetic data are excluded. Search-index titles are never verified buyers |
 | **Services in scope** | AI development and implementation, AI agents, n8n / Make / Zapier / Power Automate, CRM, finance / accounting / invoicing, document processing and data extraction, workflow automation, systems integration. Suggestions carry **no price** |
 
+> **Updated 2026-11-06 after run 42174857442:** a separate *service-relevance* check now decides whether a tender's deliverable is Solvant's kind of work, tenders are Priority B at most until their procedure is checked, and an uncertain deliverable goes to REVIEW. Details: [classification-quality.md](classification-quality.md).
+
 ## Queues (CSV `queue` column and Markdown sections)
 
 | Queue | Meaning |
 |---|---|
-| **Priority A — Immediate** | Verified content, published ≤ 30 days ago, explicit request for an external provider (Tier A/B), target market confirmed, not closed, permitted contact route |
-| **Priority B — Promising** | Verified Tier A/B intent with something missing: location unknown, 31–90 days old, date unknown, open status unknown, or contact route unconfirmed |
+| **Priority A — Immediate** | Verified **direct request** (not a tender), published ≤ 30 days ago, explicit request for an external provider, relevant deliverable, target market confirmed, not closed, permitted contact route |
+| **Priority B — Promising** | Verified relevant demand with something to check: **every relevant tender** (procedure, eligibility and submission route must be checked by a person), location unknown, 31–90 days old, date or status unknown |
+| **Review** | Verified, but **service relevance uncertain** (e.g. an IT tender whose deliverable isn't described, or non-English text not understood reliably) |
 | **Priority C — Potential** | Verified, specific operational problem with no explicit request to hire (Tier C) |
-| Watchlist | Verified Tier D: general interest, product-only tender or partner channel |
-| Excluded | Vendor, employment ad, unrelated or physical automation, closed, more than 90 days old, explicit non-target market, synthetic |
+| Watchlist | Verified Tier D: general interest, **software product / licence / subscription purchase** (vendor or reseller only), partner channel |
+| Excluded | Vendor, employment ad, **procurement unrelated to Solvant's services** (construction, cleaning, care, clinical, hardware, staffing …), physical automation, closed, awarded, more than 90 days old, explicit non-target market, synthetic |
 | Unverified | Search-index titles. **Never counted** |
 
 ## Source permissions (automated collection)
@@ -47,8 +50,8 @@ Tests cover both.
 
 ## Limits and privacy
 
-- **Request caps per run:** Contracts Finder 11 keyword searches; Find a Tender 5 pages; TED 2 POST pages of 50. At least 2–3 seconds between requests to the same host.
-- **Records:** at most `max_records` verified records are kept (default 100), most actionable first. The number dropped is reported.
+- **Request caps per run:** Contracts Finder up to 5 pages (one date-bounded query: the API ignores `keyword`); Find a Tender 5 pages; TED 4 POST pages of 50. At least 2–3 seconds between requests to the same host; HTTP 429 is retried at most twice, honouring Retry-After.
+- **Records:** service relevance is screened **before** the cap; at most `max_records` verified records go in the report (most relevant and actionable first). The number dropped is reported by relevance and queue, and every verified record is kept in `all_records.jsonl`.
 - **Personal data:** excerpts are stripped of emails, phone numbers and labelled contact names ("Contact: Jane Smith"). Forum handles are never written to reports. The job summary shows only titles, organisations, countries and URLs, with no excerpts.
 - **No credentials, Supabase, paid APIs, outreach or schedule.** Checkout runs without persisted credentials and the job has `contents: read` only.
 

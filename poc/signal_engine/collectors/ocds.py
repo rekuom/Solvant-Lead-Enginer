@@ -91,21 +91,45 @@ def parse_release_package(
                 country_hint="UK",
                 value_amount=value.get("amount"),
                 value_currency=value.get("currency"),
-                raw_meta={"kind": "tender", "tender_status": status, "tags": r.get("tag")},
+                raw_meta={"kind": "tender", "tender_status": status, "tags": r.get("tag"), "cpv": _cpv_codes(tender)},
             )
         )
     return out
 
 
+def _cpv_codes(tender: dict[str, Any]) -> list[str]:
+    """CPV codes from OCDS tender.classification, tender.items[].classification and additionalClassifications."""
+    codes: list[str] = []
+    cands = [tender.get("classification")] + list(tender.get("additionalClassifications") or [])
+    for item in tender.get("items") or []:
+        cands.append(item.get("classification"))
+        cands += list(item.get("additionalClassifications") or [])
+    for c in cands:
+        if isinstance(c, dict) and str(c.get("scheme", "CPV")).upper().startswith("CPV") and c.get("id"):
+            codes.append(str(c["id"]))
+    return sorted(set(codes))
+
+
 def fetch_contracts_finder(
-    client: PoliteClient, published_from: str, published_to: str, keywords: Iterable[str] = DEFAULT_KEYWORDS, size: int = 100
+    client: PoliteClient, published_from: str, published_to: str, keywords: Optional[Iterable[str]] = None,
+    size: int = 100, max_pages: int = 5, log: Optional[list] = None,
 ) -> list[Signal]:
+    """Live run 42174857442 showed the OCDS Search `keyword` parameter is ignored (11 keyword queries returned the
+    same 100 notices: 1,100 fetched, 1,037 duplicates). So: one date-bounded pull, paginated via links.next,
+    and service relevance is screened client-side. `keywords` is accepted for compatibility and ignored."""
     signals: list[Signal] = []
-    for kw in keywords:
-        q = urlencode({"keyword": kw, "publishedFrom": published_from, "publishedTo": published_to,
-                       "stages": "tender", "size": size})
-        pkg = client.get_json(f"{CF_SEARCH}?{q}", check_robots=False)  # documented public API
-        signals += parse_release_package(pkg, "contracts_finder")
+    url: Optional[str] = f"{CF_SEARCH}?" + urlencode({"publishedFrom": published_from, "publishedTo": published_to,
+                                                      "stages": "tender", "size": size})
+    pages = 0
+    while url and pages < max_pages:
+        pkg = client.get_json(url, check_robots=False)  # documented public API
+        got = parse_release_package(pkg, "contracts_finder")
+        signals += got
+        pages += 1
+        nxt = (pkg.get("links") or {}).get("next")
+        if log is not None:
+            log.append({"source": "contracts_finder", "page": pages, "returned": len(got), "has_next": bool(nxt)})
+        url = nxt if nxt and nxt != url else None
     return signals
 
 

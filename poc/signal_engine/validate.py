@@ -34,13 +34,15 @@ from .collectors import discourse, ocds, search_candidates, ted
 from .collectors.http import FetchBlocked, PoliteClient
 from .dedupe import dedupe
 from .models import Signal
-from .qualify import (EXCLUDED, PRIORITY_A, PRIORITY_B, PRIORITY_C, QUEUE_ORDER, UNVERIFIED, WATCHLIST, qualify)
+from .qualify import (EXCLUDED, PRIORITY_A, PRIORITY_B, PRIORITY_C, QUEUE_ORDER, REVIEW, UNVERIFIED, WATCHLIST, qualify)
 from .textutil import make_excerpt
 
 OUT = Path("out/validation")
 CANDIDATE_GLOB = "data/search_candidates_*.json"
 
-CF_SINGLE = ["https://www.contractsfinder.service.gov.uk/Published/Notice/OCDS/{guid}"]
+# Contracts Finder has no confirmed single-notice OCDS endpoint: the guessed one returned 404 for every candidate
+# in run 42174857442, so CF candidates are not re-fetched (they stay UNVERIFIED unless the collector finds them).
+CF_SINGLE: list[str] = []
 FTS_SINGLE = ["https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages/{nid}"]
 _GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 _FTS = re.compile(r"(\d{6}-\d{4})")
@@ -52,12 +54,16 @@ CSV_COLUMNS = [
     "budget_kind", "budget_gbp_estimate", "availability", "availability_basis", "contact_route", "potential_service",
     "complexity", "delivery_flags", "partnership_opportunity", "risk_flags", "missing_details", "reasons",
     "classification_evidence", "source", "verification_status", "source_collection_permitted",
+    "service_relevance", "deliverable_type", "relevance_evidence", "relevance_against", "relevance_uncertainty",
+    "opportunity_kind", "procurement_stage", "delivery_mode",
 ]
+_REL_ORDER = {"relevant": 0, "uncertain": 1, "product_only": 2, "unknown": 3, "not_relevant": 4}
 QUEUE_TITLES = {
     PRIORITY_A: "Priority A — Immediate opportunities",
     PRIORITY_B: "Priority B — Promising opportunities",
     PRIORITY_C: "Priority C — Potential prospects",
-    WATCHLIST: "Watchlist — weak signals (lower priority)",
+    REVIEW: "Review — service relevance uncertain (human decision needed)",
+    WATCHLIST: "Watchlist — weak signals, product/licence purchases (lower priority)",
     EXCLUDED: "Excluded",
     UNVERIFIED: "Unverified — search-index titles (not counted)",
 }
@@ -129,6 +135,9 @@ def verify_one(client: PoliteClient, cand: Signal) -> tuple[Optional[Signal], di
             if not key:
                 log.update(result="skipped", kind="no_notice_id")
                 return None, log
+            if not tmpl:
+                log.update(result="skipped", kind="no_single_notice_api")
+                return None, log
             sig, last_exc = None, None
             for t in tmpl:
                 ep = t.format(**fill)
@@ -180,10 +189,10 @@ def collector_plan(client: PoliteClient, since_dt: datetime, ted_log: list) -> d
     today = _now().date().isoformat()
     plan: dict[str, Callable[[], list[Signal]]] = {
         "contracts_finder": lambda: ocds.fetch_contracts_finder(
-            client, since, today, keywords=ocds.DEFAULT_KEYWORDS[: sources.policy("contracts_finder").max_requests_per_run]),
+            client, since, today, max_pages=sources.policy("contracts_finder").max_requests_per_run, log=ted_log),
         "find_a_tender": lambda: ocds.fetch_find_a_tender(
             client, f"{since}T00:00:00", max_pages=sources.policy("find_a_tender").max_requests_per_run),
-        "ted": lambda: ted.fetch_ted(client, since_dt, limit=50, max_pages=sources.policy("ted").max_requests_per_run // 2 or 1,
+        "ted": lambda: ted.fetch_ted(client, since_dt, limit=50, max_pages=sources.policy("ted").max_requests_per_run,
                                      log=ted_log),
     }
     for host in discourse.FORUMS:
@@ -237,13 +246,19 @@ def _cell(v, n: int = 120) -> str:
     return str(v if v is not None else "").replace("|", "/").replace("\n", " ")[:n]
 
 
+_ALL_GENUINE: list[dict] = []
+
+
 def build_report(signals: list[Signal], now: Optional[datetime] = None, max_records: Optional[int] = None,
                  logs: Optional[dict] = None) -> tuple[list[dict], dict, str]:
     now = now or _now()
     kept, dropped = dedupe(signals)
     recs = [qualify(s, classify(s, now=now), now=now).to_dict() for s in kept]
     order = {q: i for i, q in enumerate(QUEUE_ORDER)}
-    recs.sort(key=lambda r: (order[r["queue"]], -r["score"], r["published_at"] if r["published_at"] != "unknown" else ""))
+    # Service relevance is screened BEFORE the cap: queue (already relevance-gated), then relevance, then evidence score.
+    recs.sort(key=lambda r: (order[r["queue"]], _REL_ORDER.get(r.get("service_relevance", "unknown"), 3), -r["score"],
+                             r["published_at"] if r["published_at"] != "unknown" else ""))
+    all_genuine = [r for r in recs if r["verification_status"] in ("verified_api", "human_verified")]
     genuine = [r for r in recs if r["verification_status"] in ("verified_api", "human_verified")]
     capped_out = []
     if max_records is not None and len(genuine) > max_records:
@@ -257,8 +272,12 @@ def build_report(signals: list[Signal], now: Optional[datetime] = None, max_reco
         "run_at": now.isoformat(),
         "records_total": len(recs), "duplicates_dropped": len(dropped),
         "genuine_records": len(genuine), "genuine_dropped_by_max_records_cap": len(capped_out),
+        "dropped_by_cap_by_relevance": dict(Counter(r.get("service_relevance", "unknown") for r in capped_out)),
+        "dropped_by_cap_by_queue": dict(Counter(r["queue"] for r in capped_out)),
+        "genuine_by_service_relevance": dict(Counter(r.get("service_relevance", "unknown") for r in all_genuine)),
         "by_verification": dict(Counter(r["verification_status"] for r in recs)),
         "by_queue": {q: sum(1 for r in recs if r["queue"] == q) for q in QUEUE_ORDER},
+        "relevant_tenders_needing_process_check": sum(1 for r in genuine if r.get("opportunity_kind") == "tender_bid" and r["queue"] in (PRIORITY_A, PRIORITY_B)),
         "genuine_by_market": dict(Counter(r["market"] for r in genuine)),
         "genuine_by_source": dict(Counter(r["source"] for r in genuine)),
         "verified_in_target_markets_last_30d": len(recent_target),
@@ -294,15 +313,16 @@ def build_report(signals: list[Signal], now: Optional[datetime] = None, max_reco
                 md.append(f"| {_cell(r['title'], 90)} | {r['source']} | {_cell(r['reasons'], 110)} | {r['url']} |")
             continue
         md += ["| Buyer / organisation | Country (evidence) | Business requirement | Published | Evidence URL | Tier | "
-               "Potential service | Budget (info) | Complexity / flags | Open? | Contact route | Missing |",
-               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+               "Service relevance (evidence) | Potential service | Budget (info) | Complexity / flags | Stage / open? | Contact route | Missing |",
+               "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in rows:
             req = r["business_requirement"] if not r["business_requirement"].startswith("unknown") else r["title"]
             flags = [r["complexity"]] + r["delivery_flags"] + (["partnership"] if r["partnership_opportunity"] else [])
             md.append(f"| {_cell(r['organisation'], 60)} | {r['country']} ({_cell(r['location_evidence'], 50)}) | "
                       f"{_cell(r['title'], 70)} — {_cell(req, 140)} | {r['published_at'][:10]} | {r['url']} | {r['intent_tier']} | "
+                      f"{r['service_relevance']} ({_cell(r['relevance_evidence'], 70)}) | "
                       f"{_cell(r['potential_service'], 70)} | {_cell(r['budget_stated'], 50)} | {_cell(flags, 80)} | "
-                      f"{r['availability']} | {_cell(r['contact_route'], 70)} | {_cell(r['missing_details'], 80) or '—'} |")
+                      f"{r['procurement_stage']} / {r['availability']} | {_cell(r['contact_route'], 70)} | {_cell(r['missing_details'], 100) or '—'} |")
 
     md += ["", "## Source permissions", "", permissions_markdown()]
     used = {r["source"] for r in genuine}
@@ -311,6 +331,8 @@ def build_report(signals: list[Signal], now: Optional[datetime] = None, max_reco
         md += ["## Attribution", ""] + [f"- {a}" for a in attributions]
     if logs:
         md += ["", "## Fetch logs", "", "```", json.dumps(logs, indent=1, default=str)[:6000], "```"]
+    global _ALL_GENUINE
+    _ALL_GENUINE = all_genuine
     return recs, funnel, "\n".join(md) + "\n"
 
 
@@ -332,6 +354,7 @@ def cmd_report(max_records: Optional[int] = None) -> dict:
     logs = {"verify": _read_jsonl(OUT / "verify_log.jsonl"), "discover": _read_jsonl(OUT / "discover_log.jsonl")}
     recs, funnel, md = build_report(signals, max_records=max_records, logs=logs)
     _write_jsonl(OUT / "leads.jsonl", recs)
+    _write_jsonl(OUT / "all_records.jsonl", _ALL_GENUINE)  # uncapped audit trail (what the cap dropped is inspectable)
     write_csv(OUT / "lead_report.csv", recs)
     (OUT / "funnel.json").write_text(json.dumps(funnel, indent=2))
     (OUT / "lead_report.md").write_text(md)

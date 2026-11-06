@@ -14,6 +14,8 @@ Queues:
   PRIORITY_B  verified Tier A/B buying intent with something missing or uncertain
               (location unknown, 31–90 days old, date unknown, availability unknown, contact route unknown).
   PRIORITY_C  verified Tier C: a specific operational problem, no explicit request to hire.
+  REVIEW      verified, but SERVICE RELEVANCE is uncertain (e.g. IT tender whose deliverable is unclear,
+              non-English text not understood reliably). A person decides; never auto-promoted.
   WATCHLIST   verified Tier D: general interest / weak inference / partner-channel posts.
   EXCLUDED    see above.
   UNVERIFIED  search-index titles or anything whose content was not seen.
@@ -40,8 +42,34 @@ _MONEY = re.compile(rf"(?P<cur>{_CUR})\s?(?P<amt>\d[\d,.]*\d|\d)\s?(?P<k>[kKmM]\
 _HOURLY = re.compile(r"/\s?(?:hr|hour|h)\b|\bper\s+(?:hour|day)\b|\bhourly\b|\bday\s+rate\b", re.I)
 
 PRIORITY_A, PRIORITY_B, PRIORITY_C = "PRIORITY_A", "PRIORITY_B", "PRIORITY_C"
-WATCHLIST, EXCLUDED, UNVERIFIED = "WATCHLIST", "EXCLUDED", "UNVERIFIED"
-QUEUE_ORDER = (PRIORITY_A, PRIORITY_B, PRIORITY_C, WATCHLIST, EXCLUDED, UNVERIFIED)
+REVIEW, WATCHLIST, EXCLUDED, UNVERIFIED = "REVIEW", "WATCHLIST", "EXCLUDED", "UNVERIFIED"
+QUEUE_ORDER = (PRIORITY_A, PRIORITY_B, PRIORITY_C, REVIEW, WATCHLIST, EXCLUDED, UNVERIFIED)
+
+TENDER_PROCESS_NOTE = ("formal tender: confirm procedure, eligibility, lots and submission route before treating it as a sales lead "
+                       "(a published notice is not an immediately contactable buyer)")
+_PRE_PROCUREMENT = re.compile(r"\bprior\s+information\b|\bmarket\s+(?:engagement|consultation|sounding)\b|\bconsultazione\s+preliminare\b|"
+                              r"\bmarktconsultatie\b|\bmarkterkundung\b|\brequest\s+for\s+information\b|\brfi\b|\binformationsfr(?:å|a)gor\b|"
+                              r"\bpin\b", re.I)
+_AWARD = re.compile(r"\bcontract\s+award\b|\baward\s+notice\b|\bmodification\s+notice\b|\bgegenstand\s+der\s+vergabe\s+war\b|"
+                    r"\bwas\s+awarded\b|\bvoluntary\s+ex[\s-]ante\b", re.I)
+
+
+def procurement_stage(sig: Signal, now: datetime) -> str:
+    """Stage of a tender from the notice type / tags / text. Never assumes 'open'."""
+    meta = sig.raw_meta or {}
+    nt = str(meta.get("notice_type") or "").lower()
+    tags = [str(t).lower() for t in (meta.get("tags") or [])]
+    text = f"{sig.title}\n{sig.text}"
+    if nt.startswith(("can", "veat")) or "award" in tags or "contract" in tags or _AWARD.search(text):
+        return "award_or_modification"
+    if nt.startswith("pin") or "planning" in tags or _PRE_PROCUREMENT.search(text):
+        return "pre_procurement"
+    deadline = _parse_dt(sig.deadline_at)
+    if deadline is not None:
+        return "competition_open" if deadline > now else "competition_closed"
+    if nt.startswith("cn") or "tender" in tags:
+        return "competition_deadline_unknown"
+    return "unknown"
 
 _HARD_REJECT = {
     "vendor_self_promotion": "vendor advertising its own services",
@@ -82,6 +110,14 @@ class QualRecord:
     partnership_opportunity: bool
     risk_flags: list[str]
     intent_verified: bool
+    service_relevance: str             # relevant / product_only / not_relevant / uncertain
+    deliverable_type: str
+    relevance_evidence: list[str]      # what shows the deliverable is (not) Solvant's kind of work
+    relevance_against: list[str]
+    relevance_uncertainty: list[str]
+    opportunity_kind: str              # tender_bid / direct_request
+    procurement_stage: str             # tenders only; "n/a" otherwise
+    delivery_mode: str                 # direct / partner_likely / vendor_or_reseller_only / n/a
     queue: str
     reasons: list[str] = field(default_factory=list)
     missing_details: list[str] = field(default_factory=list)
@@ -138,6 +174,9 @@ def qualify(sig: Signal, c: Classification, now: Optional[datetime] = None) -> Q
     posted = _parse_dt(sig.posted_at)
     age = (now - posted).days if posted else None
     loc = locate(sig, text) if sig.is_genuine or sig.verification_status == "synthetic" else locate(sig, sig.title)
+    is_tender = (sig.raw_meta or {}).get("kind") == "tender"
+    stage = procurement_stage(sig, now) if is_tender else "n/a"
+    rel = c.relevance or {}
     pol = sources.policy(sig.source)
 
     budget_str, budget_gbp, budget_kind = parse_budget(text)
@@ -164,6 +203,12 @@ def qualify(sig: Signal, c: Classification, now: Optional[datetime] = None) -> Q
     elif c.reject_reason in _HARD_REJECT:
         queue = EXCLUDED
         reasons.append(_HARD_REJECT[c.reject_reason])
+    elif c.reject_reason == "unrelated_procurement" or (is_tender and c.service_relevance == "not_relevant"):
+        queue = EXCLUDED
+        reasons.append(f"procurement unrelated to Solvant's services ({c.deliverable_type})")
+    elif is_tender and stage == "award_or_modification":
+        queue = EXCLUDED
+        reasons.append("award / modification notice: the contract is already placed")
     elif avail == "closed":
         queue = EXCLUDED
         reasons.append(f"closed ({avail_basis})")
@@ -173,7 +218,19 @@ def qualify(sig: Signal, c: Classification, now: Optional[datetime] = None) -> Q
     elif loc.market == "other":
         queue = EXCLUDED
         reasons.append(f"outside target markets ({loc.evidence})")
+    elif c.service_relevance == "uncertain":
+        queue = REVIEW
+        reasons.append("service relevance uncertain: " + "; ".join(rel.get("uncertainty") or ["deliverable unclear"]))
+    elif c.service_relevance == "product_only":
+        queue = WATCHLIST
+        reasons.append("software product / licence purchase with no service scope (vendor or reseller partnership only)")
     elif c.intent_tier in ("A", "B"):
+        if is_tender:
+            missing.append(TENDER_PROCESS_NOTE)
+            if stage == "pre_procurement":
+                missing.append("pre-procurement stage (market engagement / prior information): no bid possible yet")
+            elif stage != "competition_open":
+                missing.append(f"tender stage not confirmed open ({stage})")
         if loc.market == "unknown":
             missing.append("location unknown: review")
         if age is None:
@@ -212,5 +269,14 @@ def qualify(sig: Signal, c: Classification, now: Optional[datetime] = None) -> Q
         complexity=c.complexity, delivery_flags=list(c.delivery_flags),
         partnership_opportunity=c.partnership_opportunity, risk_flags=risk,
         intent_verified=sig.is_genuine and c.intent_tier in ("A", "B"),
+        service_relevance=c.service_relevance, deliverable_type=c.deliverable_type,
+        relevance_evidence=list(rel.get("positive") or []),
+        relevance_against=list((rel.get("negative") or []) + (rel.get("traps") or [])),
+        relevance_uncertainty=list(rel.get("uncertainty") or []),
+        opportunity_kind="tender_bid" if is_tender else "direct_request",
+        procurement_stage=stage,
+        delivery_mode=("vendor_or_reseller_only" if c.service_relevance == "product_only" else
+                       "partner_likely" if c.partnership_opportunity or c.complexity == "high" else
+                       "direct" if c.service_relevance == "relevant" else "n/a"),
         queue=queue, reasons=reasons, missing_details=missing, score=c.score,
     )
