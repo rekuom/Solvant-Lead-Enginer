@@ -128,19 +128,27 @@ jobs:
           echo "exit=$?" >> "$GITHUB_OUTPUT"
 
       - name: Assess, route, rank (redacted public report)
-        if: always()
+        id: report
+        if: always()               # still runs after a collector failure so safe diagnostics can be published
         working-directory: poc
-        run: |
-          python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
-          cat out/discovery/report_public.md >> "$GITHUB_STEP_SUMMARY"
+        run: python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
 
+      # FAIL-CLOSED: nothing from out/discovery reaches the job summary or an artifact unless the report step
+      # succeeded AND this gate passed (all public files present, no Brave output, no e-mail/phone, counts-only audit).
       - name: Public-artifact privacy gate (no Brave output, no e-mail addresses)
-        if: always()
+        id: privacy
+        if: always() && steps.report.outcome == 'success'
         working-directory: poc
-        run: python scripts/policy_check.py --artifacts out/discovery
+        run: python scripts/policy_check.py --artifacts out/discovery --require-all
 
-      - name: Upload REDACTED outputs only
-        if: always()
+      - name: Publish redacted report to the job summary (only after the privacy gate passed)
+        if: always() && steps.report.outcome == 'success' && steps.privacy.outcome == 'success'
+        working-directory: poc
+        run: cat out/discovery/report_public.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload REDACTED outputs only (only after the privacy gate passed)
+        id: upload
+        if: always() && steps.report.outcome == 'success' && steps.privacy.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: discovery-${{ github.run_id }}
@@ -151,10 +159,17 @@ jobs:
             poc/out/discovery/stage_audit.json
             poc/out/discovery/run_log.json
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Fail if the privacy gate did not pass (artifacts withheld)
+        if: always() && steps.privacy.outcome != 'success'
+        run: |
+          echo "::error::Report generation or the public-artifact privacy gate did not succeed: no summary and no artifact were published"; exit 1
 
       - name: Fail if any enabled connector failed (never hide failures behind green)
         if: always()
+        env:
+          DISC_EXIT: ${{ steps.disc.outputs.exit }}
         run: |
-          if [ "${{ steps.disc.outputs.exit }}" != "0" ]; then
+          if [ "$DISC_EXIT" != "0" ]; then
             echo "::error::One or more connectors failed or partially failed — see run_log.json"; exit 1; fi

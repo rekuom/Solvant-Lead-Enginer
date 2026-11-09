@@ -10,6 +10,7 @@ Branch `claude/phase4-multisource-discovery` (not merged; awaiting review).
 | [supabase-schema-proposal.sql](supabase-schema-proposal.sql) | Proposed schema (not applied) |
 | [dashboard-and-crm-spec.md](dashboard-and-crm-spec.md) | Dashboard and CRM functional spec |
 | [operations.md](operations.md) | **Brave key setup and non-retention, verification routes (which hits can become leads), marketplace alert setup, temporary vs persistent data, private storage design, first-run parameters, PR checks** |
+| [next-phase-cloud-intake.md](next-phase-cloud-intake.md) | **Next-phase requirement: private cloud intake (no local Python), preferably on the dedicated Solvant Supabase project after approval** |
 | [roadmap.md](roadmap.md) | Commercial recommendation, cost and feasibility, rollout, blockers |
 
 ## Status of each capability
@@ -26,7 +27,7 @@ Branch `claude/phase4-multisource-discovery` (not merged; awaiting review).
 | PR checks (`pr-checks.yml`, `scripts/policy_check.py`) | ✅ | ✅ | — | — |
 | RSS/Atom connector | ✅ | ✅ unit | ❌ | No feed with verified terms registered |
 | Multilingual query library and planner | ✅ | ✅ unit | ✅ (GitHub, English) | Non-English phrases need native review |
-| Marketplace / manual / e-mail / licensed intake | ✅ | ✅ unit | ❌ | Owner must supply alerts or captures |
+| Marketplace / manual / e-mail / licensed intake | ✅ (local CLI) | ✅ unit | ❌ | Owner must supply alerts; **cloud intake required next** (no local Python): see next-phase-cloud-intake.md |
 | Assessment A–J + new noise detectors | ✅ | ✅ unit + real run | ✅ GitHub | Independent review pending |
 | Pipelines and ranking profiles | ✅ | ✅ unit | ✅ GitHub | — |
 | Stage audit, no silent cap | ✅ | ✅ unit | ✅ | — |

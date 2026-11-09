@@ -26,6 +26,9 @@ ALLOWED_VARS = {"BRAVE_STORAGE_RIGHTS_ATTESTATION": {"multi-source-discovery.yml
 PUBLIC_FILES = ("report_public.md", "report_public.csv", "report_public.jsonl", "stage_audit.json", "run_log.json")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 PHONE = re.compile(r"(?<![\w.])\+\d[\d ()-]{8,}\d")
+# Fail-closed publication rule for the discovery workflow (regression-checked; mirrored by the PR-check gate test).
+PUBLISH_IF = "always() && steps.report.outcome == 'success' && steps.privacy.outcome == 'success'"
+DISCOVERY_WF = "multi-source-discovery.yml"
 PRIVATE_NAMES = ("raw_discovered", "opportunities_private", "private_brave", "intake.jsonl", "review_packet", "query_log")
 
 
@@ -56,6 +59,8 @@ def check_workflows() -> list[str]:
                 errs.append(f"{n}: unexpected triggers {sorted(triggers)}")
             if re.search(r"\$\{\{\s*(secrets|vars)\.", t):
                 errs.append(f"{n}: PR checks must not reference secrets or variables")
+            if f"if: {PUBLISH_IF}" not in t or "id: privacy" not in t:
+                errs.append(f"{n}: deliberate-failure job must mirror the discovery publication condition exactly")
             live = [l for l in t.splitlines() if "--enable-brave" in l or "validate live" in l
                     or ("discovery.run discover" in l and "--dry-run" not in l)]
             if live:
@@ -79,6 +84,47 @@ def check_workflows() -> list[str]:
                 for p in PRIVATE_NAMES:
                     if p in block:
                         errs.append(f"{n}: private file '{p}' in an artifact upload")
+    wf = WF / DISCOVERY_WF
+    if wf.exists():
+        errs += check_publication_gate(wf.read_text())
+    else:
+        errs.append(f"{DISCOVERY_WF} missing")
+    return errs
+
+
+def _steps(text: str) -> list[str]:
+    return ["- " + s for s in re.split(r"\n      - ", text)[1:]]
+
+
+def _field(step: str, key: str) -> str:
+    m = re.search(rf"^\s*-?\s*{key}:\s*(.+)$", step, re.M)
+    return m.group(1).strip() if m else ""
+
+
+def check_publication_gate(text: str, name: str = DISCOVERY_WF) -> list[str]:
+    """Every step that publishes discovery output (artifact upload, or out/discovery -> job summary) must be gated
+    on the report step AND the privacy gate succeeding; the gate itself must have id 'privacy' and require all files."""
+    errs: list[str] = []
+    steps = _steps(text)
+    gate = [s for s in steps if _field(s, "id") == "privacy"]
+    if len(gate) != 1:
+        return [f"{name}: exactly one step with id 'privacy' required"]
+    if "policy_check.py --artifacts" not in gate[0] or "--require-all" not in gate[0]:
+        errs.append(f"{name}: privacy step must run policy_check.py --artifacts ... --require-all")
+    if not any(_field(s, "id") == "report" for s in steps):
+        errs.append(f"{name}: report step needs id 'report'")
+    order = {(_field(s, "id") or str(i)): i for i, s in enumerate(steps)}
+    for i, s in enumerate(steps):
+        publishes = "upload-artifact" in s or ("GITHUB_STEP_SUMMARY" in s and "out/discovery" in s)
+        if not publishes:
+            continue
+        cond = _field(s, "if")
+        if cond != PUBLISH_IF:
+            errs.append(f"{name}: publishing step '{_field(s, 'name')}' must use `if: {PUBLISH_IF}` (found `{cond}`)")
+        if i < order.get("privacy", 10**6):
+            errs.append(f"{name}: publishing step '{_field(s, 'name')}' runs before the privacy gate")
+        if "upload-artifact" in s and "if-no-files-found: error" not in s:
+            errs.append(f"{name}: upload must use if-no-files-found: error")
     return errs
 
 
@@ -107,11 +153,13 @@ def check_registry() -> list[str]:
     return errs
 
 
-def check_artifacts(d: Path) -> list[str]:
+def check_artifacts(d: Path, require_all: bool = False) -> list[str]:
     errs: list[str] = []
     for name in PUBLIC_FILES:
         f = d / name
         if not f.exists():
+            if require_all:
+                errs.append(f"{name}: missing (report generation incomplete) — nothing may be published")
             continue
         t = f.read_text()
         for m in EMAIL.findall(t):
@@ -136,8 +184,9 @@ def check_artifacts(d: Path) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--artifacts", type=Path)
+    ap.add_argument("--require-all", action="store_true", help="fail if any public file is missing")
     a = ap.parse_args()
-    errs = check_artifacts(a.artifacts) if a.artifacts else check_workflows() + check_registry()
+    errs = check_artifacts(a.artifacts, a.require_all) if a.artifacts else check_workflows() + check_registry()
     for e in errs:
         print(f"::error::{e}")
     print(f"policy_check: {'FAILED' if errs else 'OK'} ({len(errs)} violation(s))")

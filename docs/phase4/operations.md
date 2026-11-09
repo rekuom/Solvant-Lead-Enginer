@@ -92,6 +92,8 @@ Synthetic examples of each alert type are in [`poc/fixtures/alerts/`](../../poc/
 
 **Where to run intake:** on your own computer or a private environment. Intake data is personal; don't run it in GitHub Actions of this **public** repository.
 
+> **Upcoming change:** the owner doesn't want to install Python or process alerts locally. The next phase will provide private, cloud-based intake, preferably on the dedicated Solvant Supabase project, after separate approval. See [next-phase-cloud-intake.md](next-phase-cloud-intake.md). Until then, local intake is the only working route.
+
 ## 3. What disappears and what persists
 
 | Data | Where | Lifetime | Personal data? |
@@ -159,5 +161,9 @@ Synthetic examples of each alert type are in [`poc/fixtures/alerts/`](../../poc/
 - `scripts/policy_check.py`, which validates the workflows: `contents: read` only, no schedules, no `pull_request_target`, live workflows manual-only, `BRAVE_SEARCH_API_KEY` referenced only in the Discover step, and no private files in artifact uploads. It also validates the source registry: restricted, unknown and prohibited sources can't be collected without opt-in, and Brave retention is impossible without attestation;
 - an offline end-to-end run: dry-run discovery, synthetic alert fixtures, then a report. It asserts that no fixture reaches the public report, then runs the artifact privacy gate;
 - the procurement classifier on the frozen dev split (report only; no tuning, and the held-out split is untouched).
+
+- `publication-fail-closed`, a deliberate-failure test evaluated by GitHub Actions itself. It runs four scenarios (privacy gate fails, report fails, files missing, clean) and asserts that the publish step is skipped unless the report and the privacy gate both succeeded.
+
+**Fail-closed publication in the discovery workflow.** The report step (`id: report`) still runs after a collector failure, so safe diagnostics can be published. The privacy gate (`id: privacy`, `--require-all`) runs only if the report succeeded. The job summary and the artifact upload both require `steps.report.outcome == 'success' && steps.privacy.outcome == 'success'`, and the upload uses `if-no-files-found: error`. If the gate doesn't pass, a final step fails the run, with no summary and no artifact. `policy_check.py` enforces this layout.
 
 Live workflows (`multi-source-discovery`, `live-lead-validation`, `source-network-test`) remain `workflow_dispatch` only.

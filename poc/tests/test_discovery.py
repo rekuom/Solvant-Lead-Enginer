@@ -670,3 +670,66 @@ class PolicyCheckScript(unittest.TestCase):
             for expected in ("Brave record", "e-mail", "phone", "duplicate log", "URL inside Brave aggregate"):
                 self.assertIn(expected, errs)
             self.assertNotIn("jane.doe", errs)            # the checker itself must not echo the address
+
+
+class PublicationFailClosed(unittest.TestCase):
+    """Regression: discovery artifacts / job summary may be published ONLY if report generation and the privacy gate succeeded."""
+    WF = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "multi-source-discovery.yml"
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("policy_check", Path(__file__).resolve().parents[1] / "scripts" / "policy_check.py")
+        cls.pc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.pc)
+        cls.text = cls.WF.read_text()
+
+    def test_current_workflow_is_fail_closed(self):
+        self.assertEqual(self.pc.check_publication_gate(self.text), [])
+        self.assertIn(f"if: {self.pc.PUBLISH_IF}", self.text)
+
+    def test_upload_with_always_is_rejected(self):
+        bad = self.text.replace(f"        id: upload\n        if: {self.pc.PUBLISH_IF}", "        id: upload\n        if: always()")
+        self.assertNotEqual(bad, self.text)
+        self.assertTrue(any("Upload" in e for e in self.pc.check_publication_gate(bad)))
+
+    def test_original_pre_fix_layout_is_rejected(self):
+        # the layout flagged in review: gate and upload both `if: always()`, summary written in the report step
+        old = """jobs:
+  discover:
+    steps:
+      - name: Assess, route, rank (redacted public report)
+        if: always()
+        working-directory: poc
+        run: |
+          python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
+          cat out/discovery/report_public.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Public-artifact privacy gate (no Brave output, no e-mail addresses)
+        if: always()
+        working-directory: poc
+        run: python scripts/policy_check.py --artifacts out/discovery
+
+      - name: Upload REDACTED outputs only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: warn
+"""
+        self.assertTrue(self.pc.check_publication_gate(old))
+
+    def test_summary_before_gate_is_rejected(self):
+        bad = self.text.replace("run: python -m signal_engine.discovery.run report --shortlist 20 > /dev/null",
+                                "run: |\n          python -m signal_engine.discovery.run report --shortlist 20 > /dev/null\n"
+                                "          cat out/discovery/report_public.md >> \"$GITHUB_STEP_SUMMARY\"")
+        self.assertTrue(any("must use" in e or "before the privacy gate" in e for e in self.pc.check_publication_gate(bad)))
+
+    def test_gate_without_require_all_or_id_is_rejected(self):
+        self.assertTrue(self.pc.check_publication_gate(self.text.replace(" --require-all", "")))
+        self.assertTrue(self.pc.check_publication_gate(self.text.replace("id: privacy", "id: gate")))
+
+    def test_missing_public_files_fail_the_gate(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "report_public.md").write_text("ok\n")
+            self.assertEqual(self.pc.check_artifacts(Path(d)), [])
+            self.assertTrue(any("missing" in e for e in self.pc.check_artifacts(Path(d), require_all=True)))
