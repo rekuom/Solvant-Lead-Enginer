@@ -21,8 +21,11 @@ sys.path.insert(0, str(POC))
 WF = ROOT / ".github" / "workflows"
 PR_CHECK = "pr-checks.yml"
 # secret name -> workflows allowed to reference it (and only inside the named step)
-ALLOWED_SECRETS = {"BRAVE_SEARCH_API_KEY": {"multi-source-discovery.yml"}}
-ALLOWED_VARS = {"BRAVE_STORAGE_RIGHTS_ATTESTATION": {"multi-source-discovery.yml"}}
+ALLOWED_SECRETS = {"BRAVE_SEARCH_API_KEY": {"multi-source-discovery.yml"}, "SIGNAL_INGEST_TOKEN": {"multi-source-discovery.yml"}}
+ALLOWED_VARS = {"BRAVE_STORAGE_RIGHTS_ATTESTATION": {"multi-source-discovery.yml"}, "SUPABASE_URL": {"multi-source-discovery.yml"},
+                "SUPABASE_ANON_KEY": {"multi-source-discovery.yml"}, "DISCOVERY_SCHEDULE_ENABLED": {"multi-source-discovery.yml"}}
+# only the discovery workflow may be scheduled, and only behind an operator opt-in variable with Brave impossible on schedule
+SCHEDULABLE = {"multi-source-discovery.yml"}
 PUBLIC_FILES = ("report_public.md", "report_public.csv", "report_public.jsonl", "stage_audit.json", "run_log.json")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 PHONE = re.compile(r"(?<![\w.])\+\d[\d ()-]{8,}\d")
@@ -47,7 +50,13 @@ def check_workflows() -> list[str]:
         n = f.name
         triggers = set(re.findall(r"^  ([a-z_]+):", _on_block(t), re.M))
         if re.search(r"^\s+schedule:", t, re.M) or "cron:" in t:
-            errs.append(f"{n}: scheduled trigger not allowed (manual collection only)")
+            if n not in SCHEDULABLE:
+                errs.append(f"{n}: scheduled trigger not allowed (manual collection only)")
+            else:
+                if "vars.DISCOVERY_SCHEDULE_ENABLED == 'true'" not in t:
+                    errs.append(f"{n}: schedule must be gated on vars.DISCOVERY_SCHEDULE_ENABLED == 'true'")
+                if "github.event_name == 'workflow_dispatch' && inputs.enable_brave" not in t:
+                    errs.append(f"{n}: Brave must be impossible on scheduled runs")
         if "pull_request_target" in t:
             errs.append(f"{n}: pull_request_target not allowed")
         if not re.search(r"^permissions:\s*\n\s+contents:\s*read\s*$", t, re.M):
@@ -66,12 +75,17 @@ def check_workflows() -> list[str]:
             if live:
                 errs.append(f"{n}: PR checks must not run live collection: {live}")
         else:
-            if triggers != {"workflow_dispatch"}:
-                errs.append(f"{n}: live workflows must be workflow_dispatch only (found {sorted(triggers)})")
+            allowed_triggers = {"workflow_dispatch", "schedule"} if n in SCHEDULABLE else {"workflow_dispatch"}
+            if not triggers or not triggers <= allowed_triggers or "workflow_dispatch" not in triggers:
+                errs.append(f"{n}: live workflows must be workflow_dispatch (+ gated schedule for discovery) (found {sorted(triggers)})")
         for kind, allowed in (("secrets", ALLOWED_SECRETS), ("vars", ALLOWED_VARS)):
             for name in re.findall(rf"\$\{{\{{\s*{kind}\.([A-Z0-9_]+)", t):
                 if n not in allowed.get(name, set()):
                     errs.append(f"{n}: {kind}.{name} not allowed here")
+        if "SIGNAL_INGEST_TOKEN" in t:
+            holders = [s.splitlines()[0] for s in re.split(r"\n      - ", t) if "secrets.SIGNAL_INGEST_TOKEN" in s]
+            if any("Push to the private platform database" not in h for h in holders):
+                errs.append(f"{n}: SIGNAL_INGEST_TOKEN referenced outside the platform push step: {holders}")
         if "BRAVE_SEARCH_API_KEY" in t:
             # the key may appear only in the Discover step's env
             steps = re.split(r"\n      - ", t)

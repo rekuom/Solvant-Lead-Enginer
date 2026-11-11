@@ -95,6 +95,12 @@ def discover(sources: list[str], since_days: int, max_requests: int, dry_run: bo
             got2, log2 = hn.search(qs, allow_restricted=allow_restricted, since_ts=ts, max_requests=max_requests, dry_run=dry_run)
             records += got + got2
             logs += [log.to_dict(), log2.to_dict()]
+        elif src in ("procurement", "contracts_finder", "find_a_tender", "ted"):
+            from .connectors import procurement
+            keys = procurement.KEYS if src == "procurement" else (src,)
+            got, plogs = procurement.collect(keys, since_days=since_days, max_pages=min(5, max(1, max_requests // 4)), dry_run=dry_run)
+            records += got
+            logs += [l.to_dict() for l in plogs]
         elif src == "feeds":
             got, log = run_feeds()
             records += got

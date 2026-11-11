@@ -107,3 +107,42 @@ class DiscoveryPush(unittest.TestCase):
         finally:
             if old is not None:
                 os.environ["SIGNAL_INGEST_TOKEN"] = old
+
+
+class ProcurementInDiscovery(unittest.TestCase):
+    def test_one_failing_api_does_not_stop_the_others(self):
+        from signal_engine.collectors.http import FetchBlocked
+        from signal_engine.discovery.connectors import procurement
+        from signal_engine.models import Signal
+
+        def ok():
+            return [Signal("find_a_tender", "ocds-1", "https://www.find-tender.service.gov.uk/Notice/000123-2026", "CRM workflow automation",
+                           "Integration of CRM and workflow automation services", "verified_api", posted_at="2026-11-01T00:00:00Z",
+                           organisation="Example Council", country_hint="UK", value_amount=50000, value_currency="GBP",
+                           raw_meta={"tender_status": "active", "cpv": ["72000000"]})]
+
+        def down():
+            raise FetchBlocked("http_503", "unavailable")
+        recs, logs = procurement.collect(plan={"contracts_finder": down, "find_a_tender": ok, "ted": ok})
+        self.assertEqual({l.source: l.status for l in logs}, {"contracts_finder": "failed", "find_a_tender": "ok", "ted": "ok"})
+        self.assertEqual(recs[0].verification, "api_verified")
+        self.assertEqual(recs[0].meta["budget"], "GBP 50,000")
+
+
+class SchedulePolicy(unittest.TestCase):
+    def test_schedule_rules(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("pc", Path(__file__).resolve().parents[1] / "scripts" / "policy_check.py")
+        pc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pc)
+        wf = (pc.WF / "multi-source-discovery.yml").read_text()
+        self.assertEqual(pc.check_workflows(), [])
+        ungated = wf.replace("vars.DISCOVERY_SCHEDULE_ENABLED == 'true'", "true")
+        brave_on_schedule = wf.replace("github.event_name == 'workflow_dispatch' && inputs.enable_brave", "inputs.enable_brave")
+        orig = (pc.WF / "multi-source-discovery.yml")
+        for bad, expect in ((ungated, "gated"), (brave_on_schedule, "Brave must be impossible")):
+            try:
+                orig.write_text(bad)
+                self.assertTrue(any(expect in e for e in pc.check_workflows()), expect)
+            finally:
+                orig.write_text(wf)

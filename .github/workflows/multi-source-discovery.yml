@@ -1,14 +1,20 @@
 name: Multi-source discovery
 
-# Manual-only Phase 4 discovery. Permitted, no-cost sources only (registry-gated). No outreach, no paid APIs,
-# no Supabase, no schedule. The repository is PUBLIC: public outputs are redacted; private detail is not uploaded.
+# Discovery for the Solvant platform. Permitted sources only (registry-gated). No outreach.
+# - Manual runs: any permitted source; Brave only when explicitly ticked AND a key exists (hard cap 100).
+# - Scheduled runs: OFF unless the repository variable DISCOVERY_SCHEDULE_ENABLED == 'true'; FREE sources only
+#   (GitHub, UK/EU tenders, feeds). Brave is never called on a schedule (no recurring paid calls without approval).
+# - Records go to the PRIVATE Supabase database via a hashed ingest token (secret SIGNAL_INGEST_TOKEN); public outputs
+#   are redacted, counts-only for Brave, and published only after the privacy gate passes.
 on:
+  schedule:
+    - cron: "17 6 * * *"
   workflow_dispatch:
     inputs:
       sources:
         description: "Comma list: github_issues, feeds, search:brave. (hn_algolia is restricted: only after terms review)"
         required: false
-        default: "github_issues,feeds,search:brave"
+        default: "github_issues,procurement,feeds,search:brave"
       since_days:
         description: "Look-back window (1-90 days)"
         required: false
@@ -55,6 +61,7 @@ concurrency:
 
 jobs:
   discover:
+    if: github.event_name != 'schedule' || vars.DISCOVERY_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -70,12 +77,12 @@ jobs:
       - name: Validate inputs
         id: in
         env:
-          IN_SOURCES: ${{ inputs.sources }}
-          IN_DAYS: ${{ inputs.since_days }}
-          IN_MAX: ${{ inputs.max_requests }}
-          IN_ALLOW: ${{ inputs.allow_restricted }}
-          IN_BMAX: ${{ inputs.brave_max_requests }}
-          IN_BFRESH: ${{ inputs.brave_freshness }}
+          IN_SOURCES: ${{ inputs.sources || 'github_issues,procurement,feeds' }}
+          IN_DAYS: ${{ inputs.since_days || '3' }}
+          IN_MAX: ${{ inputs.max_requests || '20' }}
+          IN_ALLOW: ${{ inputs.allow_restricted || '' }}
+          IN_BMAX: ${{ inputs.brave_max_requests || '100' }}
+          IN_BFRESH: ${{ inputs.brave_freshness || 'pm' }}
         run: |
           [[ "$IN_SOURCES" =~ ^[a-z_:,]+$ ]] || { echo "invalid sources"; exit 1; }
           [[ -z "$IN_ALLOW" || "$IN_ALLOW" =~ ^[a-z_,]+$ ]] || { echo "invalid allow_restricted"; exit 1; }
@@ -112,9 +119,9 @@ jobs:
           DAYS: ${{ steps.in.outputs.days }}
           MAX: ${{ steps.in.outputs.max }}
           ALLOW: ${{ steps.in.outputs.allow }}
-          DISC: ${{ inputs.include_discussions && '--include-discussions' || '' }}
+          DISC: ${{ (github.event_name == 'schedule' || inputs.include_discussions) && '--include-discussions' || '' }}
           DRY: ${{ inputs.dry_run && '--dry-run' || '' }}
-          BRAVE: ${{ inputs.enable_brave && '--enable-brave' || '' }}
+          BRAVE: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_brave && '--enable-brave' || '' }}
           BMAX: ${{ steps.in.outputs.bmax }}
           BFRESH: ${{ steps.in.outputs.bfresh }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}   # never logged; absent = Brave stays off
@@ -132,6 +139,16 @@ jobs:
         if: always()               # still runs after a collector failure so safe diagnostics can be published
         working-directory: poc
         run: python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
+
+      - name: Push to the private platform database (counts-only log; skipped if not configured)
+        id: push
+        if: always() && steps.report.outcome == 'success'
+        working-directory: poc
+        env:
+          SIGNAL_INGEST_TOKEN: ${{ secrets.SIGNAL_INGEST_TOKEN }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: python -m signal_engine.discovery.platform.push
 
       # FAIL-CLOSED: nothing from out/discovery reaches the job summary or an artifact unless the report step
       # succeeded AND this gate passed (all public files present, no Brave output, no e-mail/phone, counts-only audit).

@@ -58,6 +58,46 @@ jobs:
         working-directory: poc
         run: python -m benchmark.run_real_eval --split dev | tail -n 25
 
+  database:
+    name: database migrations + RLS security tests (local Postgres, no network)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Generated source seed is in sync with the engine registry
+        run: python3 supabase/scripts/gen_source_seed.py --check
+      - name: Apply migrations twice and run the security suite
+        run: bash supabase/tests/run_local.sh
+
+  web:
+    name: web app typecheck, unit tests, production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: build-time-placeholder
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Deployed engine copy matches poc/signal_engine
+        run: python3 ../scripts/sync_engine.py --check
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   # Deliberate-failure test of the discovery workflow's fail-closed publication rule, evaluated by GitHub Actions itself.
   # Same step ids and the SAME `if:` expression as multi-source-discovery.yml (policy_check.py enforces both copies).
   # The "publish" step is a stand-in (echo), so nothing is uploaded even if the rule were broken.
