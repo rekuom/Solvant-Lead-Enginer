@@ -1,0 +1,122 @@
+name: PR checks
+
+# Lightweight, offline checks for every pull request: no secrets, no repository variables, no paid API calls,
+# no collection. Live discovery / validation workflows stay manual (workflow_dispatch) and are NOT run here.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      NO_NETWORK_COLLECTION: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Unit, regression, privacy and Brave non-retention tests
+        working-directory: poc
+        run: python -m unittest discover -s tests -v
+
+      - name: Source policy and workflow validation
+        working-directory: poc
+        run: python scripts/policy_check.py
+
+      - name: Offline end-to-end (dry-run discovery + synthetic fixtures; nothing counted as real)
+        working-directory: poc
+        run: |
+          set -euo pipefail
+          python -m signal_engine.discovery.run discover --sources github_issues,feeds,search:brave --dry-run > /dev/null
+          for f in fixtures/alerts/*.eml; do python -m signal_engine.discovery.run intake email "$f" --fixture > /dev/null; done
+          python -m signal_engine.discovery.run report > /dev/null
+          python - <<'PY'
+          import json
+          rows = [json.loads(l) for l in open("out/discovery/report_public.jsonl") if l.strip()]
+          bad = [r for r in rows if r["record"]["verification"] == "fixture"]
+          assert not bad, f"{len(bad)} synthetic fixture records reached the public report"
+          audit = json.load(open("out/discovery/stage_audit.json"))
+          assert "duplicates" not in audit, "per-record duplicate log in public stage audit"
+          print("fixtures excluded from leads; stage audit counts-only: OK")
+          PY
+          python scripts/policy_check.py --artifacts out/discovery --require-all
+
+      - name: Procurement classifier on the frozen real-record dev split (report only; no tuning)
+        working-directory: poc
+        run: python -m benchmark.run_real_eval --split dev | tail -n 25
+
+  # Deliberate-failure test of the discovery workflow's fail-closed publication rule, evaluated by GitHub Actions itself.
+  # Same step ids and the SAME `if:` expression as multi-source-discovery.yml (policy_check.py enforces both copies).
+  # The "publish" step is a stand-in (echo), so nothing is uploaded even if the rule were broken.
+  publication-fail-closed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [privacy_gate_fails, report_fails, files_missing, clean]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Report (stand-in for discovery report generation)
+        id: report
+        continue-on-error: true
+        working-directory: poc
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          [ "$SCENARIO" = report_fails ] && { echo "simulated report failure"; exit 1; }
+          python -m signal_engine.discovery.run discover --sources github_issues,feeds,search:brave --dry-run > /dev/null
+          python -m signal_engine.discovery.run report > /dev/null
+          if [ "$SCENARIO" = privacy_gate_fails ]; then   # seed a synthetic Brave record + e-mail into the public report
+            echo '{"record": {"source_key": "web_search_brave", "verification": "search_snippet_only", "title": "x"}}' >> out/discovery/report_public.jsonl
+            echo 'contact test.person@example.com' >> out/discovery/report_public.md
+          fi
+          [ "$SCENARIO" = files_missing ] && rm out/discovery/report_public.csv
+          true
+
+      - name: Public-artifact privacy gate
+        id: privacy
+        if: always() && steps.report.outcome == 'success'
+        continue-on-error: true
+        working-directory: poc
+        run: python scripts/policy_check.py --artifacts out/discovery --require-all
+
+      - name: Publish (stand-in for summary + artifact upload)
+        id: upload
+        if: always() && steps.report.outcome == 'success' && steps.privacy.outcome == 'success'
+        run: echo "would publish"
+
+      - name: Assert publication decision
+        if: always()
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          REPORT: ${{ steps.report.outcome }}
+          PRIVACY: ${{ steps.privacy.outcome }}
+          UPLOAD: ${{ steps.upload.outcome }}
+        run: |
+          echo "scenario=$SCENARIO report=$REPORT privacy=$PRIVACY publish=$UPLOAD" | tee -a "$GITHUB_STEP_SUMMARY"
+          case "$SCENARIO" in
+            privacy_gate_fails|files_missing) [ "$PRIVACY" = failure ] && [ "$UPLOAD" = skipped ] ;;
+            report_fails)                     [ "$REPORT" = failure ] && [ "$PRIVACY" = skipped ] && [ "$UPLOAD" = skipped ] ;;
+            clean)                            [ "$PRIVACY" = success ] && [ "$UPLOAD" = success ] ;;
+          esac || { echo "::error::fail-closed publication rule violated for $SCENARIO"; exit 1; }

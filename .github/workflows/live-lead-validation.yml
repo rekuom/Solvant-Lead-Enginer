@@ -132,6 +132,20 @@ jobs:
                     + (f" — {l.get('kind')}" if l.get('kind') else ""))
           EOF
 
+      - name: Fail if any collector failed (never hide failures behind green)
+        if: always()
+        working-directory: poc
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          p = pathlib.Path("out/validation/discover_log.jsonl")
+          rows = [json.loads(l) for l in p.read_text().splitlines() if l.strip()] if p.exists() else []
+          failed = [r for r in rows if r.get("result") == "failed"]
+          for r in failed:
+              print(f"::error::collector {r.get('source')} failed: {r.get('kind')}")
+          sys.exit(1 if failed else 0)
+          PY
+
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4

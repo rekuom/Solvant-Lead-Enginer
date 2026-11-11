@@ -1,0 +1,175 @@
+name: Multi-source discovery
+
+# Manual-only Phase 4 discovery. Permitted, no-cost sources only (registry-gated). No outreach, no paid APIs,
+# no Supabase, no schedule. The repository is PUBLIC: public outputs are redacted; private detail is not uploaded.
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma list: github_issues, feeds, search:brave. (hn_algolia is restricted: only after terms review)"
+        required: false
+        default: "github_issues,feeds,search:brave"
+      since_days:
+        description: "Look-back window (1-90 days)"
+        required: false
+        default: "45"
+      max_requests:
+        description: "Max API requests per connector (1-30)"
+        required: false
+        default: "20"
+      include_discussions:
+        description: "Also search GitHub Discussions (GraphQL with the job token)"
+        type: boolean
+        default: true
+      allow_restricted:
+        description: "Restricted sources you have reviewed and explicitly allow for THIS run (e.g. hn_algolia). Leave empty if unsure."
+        required: false
+        default: ""
+      dry_run:
+        description: "Plan only: no requests at all"
+        type: boolean
+        default: false
+      enable_brave:
+        description: "Allow LIVE Brave Search requests (needs the BRAVE_SEARCH_API_KEY secret). Off = plan + cost estimate only"
+        type: boolean
+        default: false
+      brave_max_requests:
+        description: "Brave request cap for this run (1-100; hard cap 100)"
+        required: false
+        default: "100"
+      brave_freshness:
+        description: "Brave freshness: pd (24h), pw (7d), pm (31d), py (1y)"
+        required: false
+        default: "pm"
+      brave_retention_permitted:
+        description: "Request retention. Has NO effect unless the repo VARIABLE BRAVE_STORAGE_RIGHTS_ATTESTATION is set; even then snippets stay private (never uploaded)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multi-source-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate inputs
+        id: in
+        env:
+          IN_SOURCES: ${{ inputs.sources }}
+          IN_DAYS: ${{ inputs.since_days }}
+          IN_MAX: ${{ inputs.max_requests }}
+          IN_ALLOW: ${{ inputs.allow_restricted }}
+          IN_BMAX: ${{ inputs.brave_max_requests }}
+          IN_BFRESH: ${{ inputs.brave_freshness }}
+        run: |
+          [[ "$IN_SOURCES" =~ ^[a-z_:,]+$ ]] || { echo "invalid sources"; exit 1; }
+          [[ -z "$IN_ALLOW" || "$IN_ALLOW" =~ ^[a-z_,]+$ ]] || { echo "invalid allow_restricted"; exit 1; }
+          [[ "$IN_DAYS" =~ ^[0-9]+$ && "$IN_DAYS" -ge 1 && "$IN_DAYS" -le 90 ]] || { echo "since_days 1-90"; exit 1; }
+          [[ "$IN_MAX" =~ ^[0-9]+$ && "$IN_MAX" -ge 1 && "$IN_MAX" -le 30 ]] || { echo "max_requests 1-30"; exit 1; }
+          [[ "$IN_BMAX" =~ ^[0-9]+$ && "$IN_BMAX" -ge 1 && "$IN_BMAX" -le 100 ]] || { echo "brave_max_requests 1-100"; exit 1; }
+          [[ "$IN_BFRESH" =~ ^(pd|pw|pm|py)$ ]] || { echo "brave_freshness must be pd/pw/pm/py"; exit 1; }
+          { echo "sources=$IN_SOURCES"; echo "days=$IN_DAYS"; echo "max=$IN_MAX"; echo "allow=$IN_ALLOW";
+            echo "bmax=$IN_BMAX"; echo "bfresh=$IN_BFRESH"; } >> "$GITHUB_OUTPUT"
+
+      - name: Unit + regression tests (must pass before any collection)
+        working-directory: poc
+        run: python -m unittest discover -s tests
+
+      - name: Source permission registry
+        working-directory: poc
+        run: |
+          echo "## Source registry" >> "$GITHUB_STEP_SUMMARY"
+          python -m signal_engine.discovery.run sources >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore query log (repeat prevention across runs; contains query ids and counts only)
+        uses: actions/cache@v4
+        with:
+          path: poc/out/discovery/query_log.json
+          key: discovery-querylog-${{ github.run_id }}
+          restore-keys: discovery-querylog-
+
+      - name: Discover (permitted sources only)
+        id: disc
+        working-directory: poc
+        env:
+          GITHUB_TOKEN: ${{ github.token }}     # read-only job token: raises GitHub search limits, enables Discussions GraphQL
+          SOURCES: ${{ steps.in.outputs.sources }}
+          DAYS: ${{ steps.in.outputs.days }}
+          MAX: ${{ steps.in.outputs.max }}
+          ALLOW: ${{ steps.in.outputs.allow }}
+          DISC: ${{ inputs.include_discussions && '--include-discussions' || '' }}
+          DRY: ${{ inputs.dry_run && '--dry-run' || '' }}
+          BRAVE: ${{ inputs.enable_brave && '--enable-brave' || '' }}
+          BMAX: ${{ steps.in.outputs.bmax }}
+          BFRESH: ${{ steps.in.outputs.bfresh }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}   # never logged; absent = Brave stays off
+          RETAIN: ${{ inputs.brave_retention_permitted && '--brave-retention-permitted' || '' }}
+          # Operator-configured attestation (Settings > Variables), format plan=..;confirmed_by=..;date=YYYY-MM-DD. Not a run input.
+          BRAVE_STORAGE_RIGHTS_ATTESTATION: ${{ vars.BRAVE_STORAGE_RIGHTS_ATTESTATION }}
+        run: |
+          set +e
+          python -m signal_engine.discovery.run discover --sources "$SOURCES" --since-days "$DAYS" --max-requests "$MAX" \
+            --max-queries 40 --allow-restricted "$ALLOW" $DISC $DRY $BRAVE $RETAIN --brave-max-requests "$BMAX" --brave-freshness "$BFRESH"
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Assess, route, rank (redacted public report)
+        id: report
+        if: always()               # still runs after a collector failure so safe diagnostics can be published
+        working-directory: poc
+        run: python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
+
+      # FAIL-CLOSED: nothing from out/discovery reaches the job summary or an artifact unless the report step
+      # succeeded AND this gate passed (all public files present, no Brave output, no e-mail/phone, counts-only audit).
+      - name: Public-artifact privacy gate (no Brave output, no e-mail addresses)
+        id: privacy
+        if: always() && steps.report.outcome == 'success'
+        working-directory: poc
+        run: python scripts/policy_check.py --artifacts out/discovery --require-all
+
+      - name: Publish redacted report to the job summary (only after the privacy gate passed)
+        if: always() && steps.report.outcome == 'success' && steps.privacy.outcome == 'success'
+        working-directory: poc
+        run: cat out/discovery/report_public.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload REDACTED outputs only (only after the privacy gate passed)
+        id: upload
+        if: always() && steps.report.outcome == 'success' && steps.privacy.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-${{ github.run_id }}
+          path: |
+            poc/out/discovery/report_public.md
+            poc/out/discovery/report_public.csv
+            poc/out/discovery/report_public.jsonl
+            poc/out/discovery/stage_audit.json
+            poc/out/discovery/run_log.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Fail if the privacy gate did not pass (artifacts withheld)
+        if: always() && steps.privacy.outcome != 'success'
+        run: |
+          echo "::error::Report generation or the public-artifact privacy gate did not succeed: no summary and no artifact were published"; exit 1
+
+      - name: Fail if any enabled connector failed (never hide failures behind green)
+        if: always()
+        env:
+          DISC_EXIT: ${{ steps.disc.outputs.exit }}
+        run: |
+          if [ "$DISC_EXIT" != "0" ]; then
+            echo "::error::One or more connectors failed or partially failed — see run_log.json"; exit 1; fi
