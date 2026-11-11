@@ -1,0 +1,972 @@
+{
+ "version": "2026-11-06",
+ "categories": [
+  "explicit_project_request",
+  "recommendation_request",
+  "external_provider_search",
+  "agency_partnership",
+  "problem_statement",
+  "implementation_blocker",
+  "freelancer_hiring",
+  "github_broad"
+ ],
+ "languages": [
+  "cs",
+  "da",
+  "de",
+  "en",
+  "es",
+  "fi",
+  "fr",
+  "it",
+  "nl",
+  "no",
+  "pl",
+  "pt",
+  "ro",
+  "sv"
+ ],
+ "phrases": [
+  {
+   "id": "explic-en-00",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "looking for someone to automate",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-01",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "need someone to build an automation",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-02",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "looking for an n8n developer",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-03",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "need a Zapier expert",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-04",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "looking for a Make.com expert",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-05",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "need someone to build an AI agent",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-06",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "looking for a Power Automate consultant",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-07",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "willing to pay for help with automation",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-08",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "paid project: automate",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-en-09",
+   "category": "explicit_project_request",
+   "lang": "en",
+   "text": "looking to hire someone to integrate",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "explic-fr-00",
+   "category": "explicit_project_request",
+   "lang": "fr",
+   "text": "je cherche quelqu'un pour automatiser",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-fr-01",
+   "category": "explicit_project_request",
+   "lang": "fr",
+   "text": "recherche un freelance pour automatiser",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-fr-02",
+   "category": "explicit_project_request",
+   "lang": "fr",
+   "text": "besoin d'un expert Zapier",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-fr-03",
+   "category": "explicit_project_request",
+   "lang": "fr",
+   "text": "cherche un développeur n8n",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-de-00",
+   "category": "explicit_project_request",
+   "lang": "de",
+   "text": "suche jemanden, der automatisiert",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-de-01",
+   "category": "explicit_project_request",
+   "lang": "de",
+   "text": "suche Freelancer für Automatisierung",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-de-02",
+   "category": "explicit_project_request",
+   "lang": "de",
+   "text": "suchen Entwickler für KI-Agenten",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-de-03",
+   "category": "explicit_project_request",
+   "lang": "de",
+   "text": "Power Automate Berater gesucht",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-es-00",
+   "category": "explicit_project_request",
+   "lang": "es",
+   "text": "busco a alguien para automatizar",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-es-01",
+   "category": "explicit_project_request",
+   "lang": "es",
+   "text": "necesito un experto en Zapier",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-es-02",
+   "category": "explicit_project_request",
+   "lang": "es",
+   "text": "busco desarrollador n8n",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-es-03",
+   "category": "explicit_project_request",
+   "lang": "es",
+   "text": "busco freelance para automatizar procesos",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-nl-00",
+   "category": "explicit_project_request",
+   "lang": "nl",
+   "text": "ik zoek iemand die kan automatiseren",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-nl-01",
+   "category": "explicit_project_request",
+   "lang": "nl",
+   "text": "op zoek naar een Zapier expert",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-nl-02",
+   "category": "explicit_project_request",
+   "lang": "nl",
+   "text": "freelancer gezocht voor automatisering",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-it-00",
+   "category": "explicit_project_request",
+   "lang": "it",
+   "text": "cerco qualcuno per automatizzare",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-it-01",
+   "category": "explicit_project_request",
+   "lang": "it",
+   "text": "cerco un esperto Zapier",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-it-02",
+   "category": "explicit_project_request",
+   "lang": "it",
+   "text": "cerco sviluppatore per automazione",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-pt-00",
+   "category": "explicit_project_request",
+   "lang": "pt",
+   "text": "procuro alguém para automatizar",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-pt-01",
+   "category": "explicit_project_request",
+   "lang": "pt",
+   "text": "preciso de um especialista em automação",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-pl-00",
+   "category": "explicit_project_request",
+   "lang": "pl",
+   "text": "szukam kogoś do automatyzacji",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-pl-01",
+   "category": "explicit_project_request",
+   "lang": "pl",
+   "text": "szukam freelancera do automatyzacji",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-ro-00",
+   "category": "explicit_project_request",
+   "lang": "ro",
+   "text": "caut pe cineva pentru automatizare",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-ro-01",
+   "category": "explicit_project_request",
+   "lang": "ro",
+   "text": "caut freelancer pentru automatizare",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-sv-00",
+   "category": "explicit_project_request",
+   "lang": "sv",
+   "text": "söker någon som kan automatisera",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-sv-01",
+   "category": "explicit_project_request",
+   "lang": "sv",
+   "text": "söker konsult för automatisering",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-no-00",
+   "category": "explicit_project_request",
+   "lang": "no",
+   "text": "ser etter noen som kan automatisere",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-da-00",
+   "category": "explicit_project_request",
+   "lang": "da",
+   "text": "søger en der kan automatisere",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-fi-00",
+   "category": "explicit_project_request",
+   "lang": "fi",
+   "text": "etsin tekijää automaatioon",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "explic-cs-00",
+   "category": "explicit_project_request",
+   "lang": "cs",
+   "text": "hledám někoho na automatizaci",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "recomm-en-00",
+   "category": "recommendation_request",
+   "lang": "en",
+   "text": "can anyone recommend an AI consultant",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "recomm-en-01",
+   "category": "recommendation_request",
+   "lang": "en",
+   "text": "can anyone recommend an automation agency",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "recomm-en-02",
+   "category": "recommendation_request",
+   "lang": "en",
+   "text": "recommend someone who can integrate HubSpot",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "recomm-en-03",
+   "category": "recommendation_request",
+   "lang": "en",
+   "text": "any recommendations for a CRM consultant",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "recomm-en-04",
+   "category": "recommendation_request",
+   "lang": "en",
+   "text": "who do you use for automation",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "recomm-fr-00",
+   "category": "recommendation_request",
+   "lang": "fr",
+   "text": "pouvez-vous me recommander un consultant en automatisation",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "recomm-de-00",
+   "category": "recommendation_request",
+   "lang": "de",
+   "text": "kann jemand eine Agentur für Automatisierung empfehlen",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "recomm-es-00",
+   "category": "recommendation_request",
+   "lang": "es",
+   "text": "alguien puede recomendar un consultor de automatización",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "recomm-nl-00",
+   "category": "recommendation_request",
+   "lang": "nl",
+   "text": "kan iemand een automatiseringsbureau aanbevelen",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "recomm-it-00",
+   "category": "recommendation_request",
+   "lang": "it",
+   "text": "qualcuno può consigliare un consulente per l'automazione",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "recomm-pt-00",
+   "category": "recommendation_request",
+   "lang": "pt",
+   "text": "alguém recomenda um consultor de automação",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-en-00",
+   "category": "external_provider_search",
+   "lang": "en",
+   "text": "looking for an automation agency",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "extern-en-01",
+   "category": "external_provider_search",
+   "lang": "en",
+   "text": "seeking software development partner",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "extern-en-02",
+   "category": "external_provider_search",
+   "lang": "en",
+   "text": "need an external development team",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "extern-en-03",
+   "category": "external_provider_search",
+   "lang": "en",
+   "text": "looking for a technical implementation partner",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "extern-en-04",
+   "category": "external_provider_search",
+   "lang": "en",
+   "text": "looking for an AI development agency",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "extern-en-05",
+   "category": "external_provider_search",
+   "lang": "en",
+   "text": "request for proposal automation",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "extern-fr-00",
+   "category": "external_provider_search",
+   "lang": "fr",
+   "text": "recherche agence d'automatisation",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-fr-01",
+   "category": "external_provider_search",
+   "lang": "fr",
+   "text": "recherche prestataire développement IA",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-de-00",
+   "category": "external_provider_search",
+   "lang": "de",
+   "text": "suchen Agentur für Prozessautomatisierung",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-de-01",
+   "category": "external_provider_search",
+   "lang": "de",
+   "text": "externer Dienstleister für KI gesucht",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-es-00",
+   "category": "external_provider_search",
+   "lang": "es",
+   "text": "buscamos agencia de automatización",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-nl-00",
+   "category": "external_provider_search",
+   "lang": "nl",
+   "text": "op zoek naar een automatiseringspartner",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-it-00",
+   "category": "external_provider_search",
+   "lang": "it",
+   "text": "cerchiamo un'agenzia per l'automazione",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-pt-00",
+   "category": "external_provider_search",
+   "lang": "pt",
+   "text": "procuramos agência de automação",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-pl-00",
+   "category": "external_provider_search",
+   "lang": "pl",
+   "text": "szukamy firmy do wdrożenia automatyzacji",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-ro-00",
+   "category": "external_provider_search",
+   "lang": "ro",
+   "text": "căutăm o agenție de automatizare",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-sv-00",
+   "category": "external_provider_search",
+   "lang": "sv",
+   "text": "vi söker en byrå för automatisering",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-no-00",
+   "category": "external_provider_search",
+   "lang": "no",
+   "text": "vi søker et byrå for automatisering",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-da-00",
+   "category": "external_provider_search",
+   "lang": "da",
+   "text": "vi søger et bureau til automatisering",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-fi-00",
+   "category": "external_provider_search",
+   "lang": "fi",
+   "text": "etsimme automaatiokumppania",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "extern-cs-00",
+   "category": "external_provider_search",
+   "lang": "cs",
+   "text": "hledáme dodavatele automatizace",
+   "translation_confidence": "low",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "agency-en-00",
+   "category": "agency_partnership",
+   "lang": "en",
+   "text": "white label automation developer",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "agency-en-01",
+   "category": "agency_partnership",
+   "lang": "en",
+   "text": "white-label AI development partner",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "agency-en-02",
+   "category": "agency_partnership",
+   "lang": "en",
+   "text": "subcontract automation work",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "agency-en-03",
+   "category": "agency_partnership",
+   "lang": "en",
+   "text": "looking for a delivery partner for our clients",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "agency-en-04",
+   "category": "agency_partnership",
+   "lang": "en",
+   "text": "overflow development work for our agency",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "agency-fr-00",
+   "category": "agency_partnership",
+   "lang": "fr",
+   "text": "développeur en marque blanche automatisation",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "agency-de-00",
+   "category": "agency_partnership",
+   "lang": "de",
+   "text": "White-Label Entwickler für Automatisierung",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "agency-es-00",
+   "category": "agency_partnership",
+   "lang": "es",
+   "text": "desarrollador marca blanca automatización",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "agency-nl-00",
+   "category": "agency_partnership",
+   "lang": "nl",
+   "text": "white label ontwikkelaar automatisering",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "proble-en-00",
+   "category": "problem_statement",
+   "lang": "en",
+   "text": "spending hours copying data into spreadsheets",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "proble-en-01",
+   "category": "problem_statement",
+   "lang": "en",
+   "text": "manual invoicing is killing us",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "proble-en-02",
+   "category": "problem_statement",
+   "lang": "en",
+   "text": "our CRM doesn't sync with",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "proble-en-03",
+   "category": "problem_statement",
+   "lang": "en",
+   "text": "too much manual data entry",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "proble-en-04",
+   "category": "problem_statement",
+   "lang": "en",
+   "text": "how do I automate invoices from email",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "proble-fr-00",
+   "category": "problem_statement",
+   "lang": "fr",
+   "text": "saisie manuelle des factures prend trop de temps",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "proble-de-00",
+   "category": "problem_statement",
+   "lang": "de",
+   "text": "zu viel manuelle Dateneingabe",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "proble-es-00",
+   "category": "problem_statement",
+   "lang": "es",
+   "text": "demasiada entrada manual de datos",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "proble-nl-00",
+   "category": "problem_statement",
+   "lang": "nl",
+   "text": "te veel handmatig werk in Excel",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "proble-it-00",
+   "category": "problem_statement",
+   "lang": "it",
+   "text": "troppo lavoro manuale con Excel",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "implem-en-00",
+   "category": "implementation_blocker",
+   "lang": "en",
+   "text": "can't get HubSpot to sync with",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "implem-en-01",
+   "category": "implementation_blocker",
+   "lang": "en",
+   "text": "Zapier zap keeps failing need help",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "implem-en-02",
+   "category": "implementation_blocker",
+   "lang": "en",
+   "text": "n8n workflow help paid",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "implem-en-03",
+   "category": "implementation_blocker",
+   "lang": "en",
+   "text": "stuck integrating Xero with",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "freela-en-00",
+   "category": "freelancer_hiring",
+   "lang": "en",
+   "text": "hiring freelance automation developer",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "freela-en-01",
+   "category": "freelancer_hiring",
+   "lang": "en",
+   "text": "freelance n8n project",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "freela-en-02",
+   "category": "freelancer_hiring",
+   "lang": "en",
+   "text": "contract AI developer needed",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "freela-en-03",
+   "category": "freelancer_hiring",
+   "lang": "en",
+   "text": "short-term contract integration developer",
+   "translation_confidence": "high",
+   "origin": "original"
+  },
+  {
+   "id": "freela-de-00",
+   "category": "freelancer_hiring",
+   "lang": "de",
+   "text": "Freelancer gesucht n8n",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "freela-fr-00",
+   "category": "freelancer_hiring",
+   "lang": "fr",
+   "text": "mission freelance automatisation",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "freela-nl-00",
+   "category": "freelancer_hiring",
+   "lang": "nl",
+   "text": "freelance opdracht automatisering",
+   "translation_confidence": "medium",
+   "origin": "author-written idiomatic phrase (not machine translation); needs native review"
+  },
+  {
+   "id": "ghbroa-en-00",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"looking for\" developer automation",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-01",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"paid\" freelancer integration",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-02",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"hire\" n8n",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-03",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"looking to hire\"",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-04",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"we will pay\" automation",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-05",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"paid project\" API",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-06",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"looking for a contractor\"",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-07",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"need a developer\" CRM",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-08",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"bounty\" automation integration",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  },
+  {
+   "id": "ghbroa-en-09",
+   "category": "github_broad",
+   "lang": "en",
+   "text": "\"looking for\" \"AI agent\" developer paid",
+   "translation_confidence": "high",
+   "origin": "GitHub keyword query (not an exact phrase); noisy by design — used to measure noise filtering",
+   "providers": [
+    "github"
+   ],
+   "raw_query": true
+  }
+ ],
+ "github_suffix": "is:issue created:>={since}",
+ "web_site_filters": {
+  "note": "Only domains whose source policy permits discovery may be targeted; reddit/linkedin/facebook are not crawled.",
+  "domains": []
+ }
+}

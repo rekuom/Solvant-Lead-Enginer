@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "functions": {
+    "api/engine.py": { "maxDuration": 60, "excludeFiles": "{node_modules/**,.next/**,src/**,public/**}" }
+  },
+  "rewrites": [{ "source": "/api/engine/:path*", "destination": "/api/engine.py" }]
+}
