@@ -21,7 +21,8 @@ sys.path.insert(0, str(POC))
 WF = ROOT / ".github" / "workflows"
 PR_CHECK = "pr-checks.yml"
 # secret name -> workflows allowed to reference it (and only inside the named step)
-ALLOWED_SECRETS = {"BRAVE_SEARCH_API_KEY": {"multi-source-discovery.yml"}, "SIGNAL_INGEST_TOKEN": {"multi-source-discovery.yml"}}
+ALLOWED_SECRETS = {"BRAVE_SEARCH_API_KEY": {"multi-source-discovery.yml"}, "SIGNAL_INGEST_TOKEN": {"multi-source-discovery.yml"},
+                   "SUPABASE_DB_URL": {"apply-database-migrations.yml"}}
 ALLOWED_VARS = {"BRAVE_STORAGE_RIGHTS_ATTESTATION": {"multi-source-discovery.yml"}, "SUPABASE_URL": {"multi-source-discovery.yml"},
                 "SUPABASE_ANON_KEY": {"multi-source-discovery.yml"}, "DISCOVERY_SCHEDULE_ENABLED": {"multi-source-discovery.yml"}}
 # only the discovery workflow may be scheduled, and only behind an operator opt-in variable with Brave impossible on schedule

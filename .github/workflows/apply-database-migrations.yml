@@ -1,0 +1,46 @@
+name: Apply database migrations
+
+# Manual only. Applies supabase/migrations/*.sql (non-destructive: create-if-not-exists / create-or-replace) to the
+# dedicated Solvant project, after running the same files against a throwaway local Postgres first.
+# Needs repository secret SUPABASE_DB_URL (the project's Postgres connection string, Session pooler, with password).
+# Logs contain DDL notices only — never lead data. Type APPLY to confirm.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type APPLY to apply the migrations to project dfnaevcsergsphiiodtm"
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-database-migrations
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: '[ "$CONFIRM" = "APPLY" ] || { echo "::error::Type APPLY to confirm"; exit 1; }'
+      - name: Rehearse on a local Postgres (must pass first)
+        run: bash supabase/tests/run_local.sh
+      - name: Apply to the dedicated project
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          [ -n "$SUPABASE_DB_URL" ] || { echo "::error::Secret SUPABASE_DB_URL is not set"; exit 1; }
+          case "$SUPABASE_DB_URL" in *dfnaevcsergsphiiodtm*) ;; *) echo "::error::Connection string is not for project dfnaevcsergsphiiodtm"; exit 1;; esac
+          for f in supabase/migrations/*.sql; do
+            echo "applying $(basename "$f")"
+            PGOPTIONS="-c client_min_messages=warning" psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -1 -f "$f" > /dev/null
+          done
+          psql "$SUPABASE_DB_URL" -At -c "select count(*) || ' sources seeded' from public.sources"

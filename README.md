@@ -1,3 +1,5 @@
+> **Platform:** the Solvant Signal Engine web application, database and deployment guide are in [docs/platform/README.md](docs/platform/README.md).
+
 # Solvant Signal Engine
 
 Buying-intent intelligence for [Solvant.io](https://solvant.io). It finds organisations in the **UK, UAE and all of Europe** that are **actively looking for an external provider** for AI development, AI agents, workflow automation (n8n, Make, Zapier, Power Automate), CRM and finance automation, document processing and systems integration. **No budget minimum or maximum**: budget is recorded, never used to exclude. Weaker evidence, such as general complaints, internal recruitment and vendor self-promotion, is separated out and explained.
