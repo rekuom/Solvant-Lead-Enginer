@@ -9,8 +9,8 @@ project `dfnaevcsergsphiiodtm`.
 | Part | Where | What it does |
 |---|---|---|
 | Web app | `web/` (Next.js 16, App Router, Tailwind) | Dashboard, opportunity list and detail pages, kanban pipeline, intake, follow-ups, saved searches, notifications, analytics, source control centre, settings |
-| Engine function | `web/api/engine.py` (Vercel Python function) | Runs the **same** Python engine (copied to `web/api/_engine` by `scripts/sync_engine.py`; PR checks fail if the copy is stale) to parse alert e-mails, CSVs and pasted posts, and classify them |
-| Database | `supabase/migrations/*.sql` | 23 tables, RLS on every table, audited functions, hashed ingest tokens |
+| Engine functions | `web/api/engine/*.py` + `web/pyengine/` | Run the **same** Python engine (copied by `scripts/sync_engine.py`; PR checks fail if the copy is stale) to parse alert e-mails, CSVs and pasted posts, and classify them |
+| Database | `supabase/migrations/*.sql` | Schema `solvant`: 24 tables, RLS on every table, audited functions, hashed ingest tokens |
 | Collectors | `.github/workflows/multi-source-discovery.yml` | GitHub Issues and Discussions, Contracts Finder, Find a Tender, TED, RSS/Atom and Brave (opt-in, counts only). Records are pushed to the database by `signal_engine.discovery.platform.push` |
 
 **Data flow**
@@ -58,70 +58,114 @@ project `dfnaevcsergsphiiodtm`.
 
 Nothing is deleted for lacking evidence. Weak or uncertain records get priority C and stay in review.
 
-## Deployment (owner actions, no local installs)
+## Database safety
 
-### 1. Apply the database migrations
+- **Namespace:** every object lives in the app-owned schema **`solvant`** (plus `pg_trgm` in `extensions`). Nothing is created in `public`, so the generic table names can't collide with other objects.
+- **Not "unconditionally non-destructive".** Inside `solvant` the migrations use `create or replace function`, `drop policy/trigger if exists` on their own tables, and `on conflict do update` for the source seed. That is why they must only ever run against a `solvant` schema that this app created.
+- **Preflight (`supabase/preflight/preflight.sql`)** is read-only (`BEGIN READ ONLY`) and generated from the migrations. It returns **REJECT** if:
+  - the database isn't a Supabase project;
+  - the API roles are missing;
+  - a `solvant` schema exists without this app's migration ledger;
+  - `solvant` contains any object the migrations don't create;
+  - the ledger has a version newer than this code;
+  - `pg_trgm` is installed outside `extensions`.
 
-The Supabase connection available to Claude is **read-only**, so the migrations have not been applied yet. Choose one of these options:
+  It also reports a WARN if `solvant` isn't yet exposed through the Data API. `supabase/scripts/preflight.py --expect-ref dfnaevcsergsphiiodtm` also refuses any connection string for another project.
+- **Atomic apply:** the workflow concatenates all migrations and applies them with `psql -1`, so any error rolls everything back. This is tested locally with an injected failure.
+- **Recovery:**
+  - A failed apply leaves nothing behind.
+  - To undo a successful first install that contains no data, use `supabase/recovery/remove_empty_solvant_schema.sql`. It refuses if any application rows exist.
+  - After real data exists, recovery means restoring a backup. See step 4 below.
+- **Ledger:** `solvant.schema_migrations` records every applied version.
 
-**Option A, GitHub Actions (recommended):**
-1. In Supabase, open **Project dfnaevcsergsphiiodtm → Connect → Session pooler** and copy the connection string, including the database password.
-2. In GitHub, open **rekuom/Solvant-Lead-Enginer → Settings → Secrets and variables → Actions → New repository secret** and add `SUPABASE_DB_URL` with that value.
-3. Open **Actions → Apply database migrations → Run workflow**, type `APPLY` and run it. It rehearses the migrations on a throwaway Postgres first, then applies them, each file in a single transaction.
+## Supabase keys
 
-**Option B, SQL editor:** open the Supabase **SQL editor** and run the four files in `supabase/migrations/` in order.
+- **Web app:** use the modern **publishable key** (`sb_publishable_…`) as `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The legacy anon JWT is accepted as `NEXT_PUBLIC_SUPABASE_ANON_KEY` as a fallback. All data access runs with the signed-in user's own JWT.
+- **Python engine:** `signal_engine/discovery/platform/rest.py` sends the publishable key **only** in the `apikey` header; per Supabase's docs, a publishable key in `Authorization: Bearer` is rejected because it isn't a JWT. The user's real JWT goes in `Authorization` for user requests. Machine ingestion sends only `apikey`; its authority is the hashed, scoped ingest token. A legacy anon JWT is mirrored into `Authorization` for compatibility, and a `sb_secret_` key is refused outright.
+- **No secret or service-role key anywhere.**
 
-All four migrations are non-destructive. They only create objects and never drop or overwrite existing data.
+## Engine endpoint routing
 
-### 2. Create your admin access
+There are no rewrites. Each endpoint is its own Vercel Python function, and its operation is fixed in the file, so the request path can't misroute it:
+- `web/api/engine/health.py` → `GET /api/engine/health`
+- `web/api/engine/intake.py` → `POST /api/engine/intake`
+- `web/api/engine/inbound-email.py` → `POST /api/engine/inbound-email`
 
-In the Supabase SQL editor, run:
+The shared code and the copied engine live in `web/pyengine/`, bundled with `includeFiles`. Every response carries an `X-Solvant-Endpoint` header. `scripts/smoke_test.py` uses it to prove each URL reached the right function on the real deployment.
 
-```sql
-select public.create_bootstrap_code();
-```
+## Export permissions
 
-Copy the code. It expires in 7 days and works once. You'll use it in step 4.
+A CSV row is exported only if the **source's contractual export right** is recorded:
+- `sources.export_allowed` must be set, together with an `export_basis` of at least 10 characters (enforced by the `sources_export_guard` constraint);
+- this is impossible for sources whose terms are unknown or prohibited;
+- **purchased leads** also need an explicit per-record licence (`licence_allows_export=yes` in the import CSV).
 
-### 3. Configure Auth
+Verification status and "we entered it ourselves" never grant export.
 
-In **Supabase → Authentication → URL configuration**:
-- set the **Site URL** to the app URL from step 4;
-- add `<app URL>/auth/callback` to **Redirect URLs**.
+**Defaults:** only public procurement notices are exportable (UK Open Government Licence / EU open data). Marketplaces, social sources and lead vendors start as not exportable; an admin can record a basis on the Sources page. Withheld rows are counted, never listed, and every export is written to the audit log.
 
-Once you have created your own account, consider disabling public sign-ups (**Authentication → Providers → Email**). Accounts without a membership can't see any data either way.
+## Collector control (Sources page → GitHub Actions)
 
-### 4. Deploy the web app (Vercel)
+The `multi-source-discovery` workflow calls `solvant.collector_plan` with the discovery token. It then runs `signal_engine.discovery.platform.plan`, which selects a source only if all of these hold:
+- the engine has a connector for it;
+- the registry permits it: either `permitted`, or `restricted` with a recorded approval. Unknown, prohibited, manual-only and licensed terms can't be overridden;
+- an admin has enabled it;
+- its own cron schedule is due (scheduled runs are evaluated hourly);
+- for paid sources: a manual run only, with a budget above zero, enough remaining budget and the credential present; requests are capped by the remaining budget;
+- it is within its per-run request limit.
 
-1. In Vercel, choose **Add New → Project** and import `rekuom/Solvant-Lead-Enginer`.
-2. Set **Root Directory** to `web`.
-3. Add the environment variables:
-   - `NEXT_PUBLIC_SUPABASE_URL` = `https://dfnaevcsergsphiiodtm.supabase.co`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = the project's publishable or anon key
-4. Deploy.
+If the plan can't be fetched, **scheduled runs collect nothing**, and the Sources page shows "Automated collection NOT active" until a collector has read the settings within the last 26 hours.
 
-**Plan note:** Vercel's Hobby plan is for non-commercial use, so a business deployment normally needs a paid plan. This is your decision.
+## Retention
 
-### 5. Sign in
+| Data | Rule (when the policy is enabled) |
+|---|---|
+| Excerpts on records past `retain_until` that never progressed (discovered / needs review / archived) | Removed |
+| Linked evidence copies (`evidence.source_fact`) | Removed |
+| Derived evidence snippets in classifications | Removed; values, confidence and history kept |
+| Verification notes inside activity entries | Removed; the activity entry is kept |
+| Records that progressed into sales | Kept (active business records) |
+| Audit log | Deleted after `audit_days` (default 730) |
+| Read notifications | Deleted after 90 days |
 
-Open the app, create your account, confirm your e-mail, then enter the setup code from step 2. You become admin.
+`solvant.enforce_retention()` is a **no-op until `retention_policy.enabled = true`**. To run it daily, apply `supabase/optional/enable_retention_schedule.sql` (pg_cron) after the rules are approved. Admins can also run the same rules manually on the Settings page.
 
-### 6. Connect the collectors (optional)
+## Deployment order (owner actions; no local installs)
 
-1. In the app, open **Settings → Discovery connection → Create token**.
-2. In GitHub, add the secret `SIGNAL_INGEST_TOKEN` and the variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-3. Optional: set the variable `DISCOVERY_SCHEDULE_ENABLED=true` for daily collection from free sources (06:17 UTC).
+1. **Review PR #2 and let CI pass.**
+2. **Read-only preflight against the target.** In the Supabase SQL editor of project `dfnaevcsergsphiiodtm`, paste and run `supabase/preflight/preflight.sql`. The VERDICT row must be `OK`; a `WARN` for Data API exposure is expected before step 6. It changes nothing.
+3. **Merge PR #2.** The migration workflow added by this PR can only be started from the default branch after the merge.
+4. **Backup / recovery point.**
+   - Paid plans: confirm daily backups or PITR in **Database → Backups**.
+   - Free plan: there are no downloadable backups. The project currently holds no app data, so the recovery path is the single-transaction apply plus `supabase/recovery/remove_empty_solvant_schema.sql`.
+5. **Apply the migrations,** using one of:
+   - **Workflow (recommended):** add the repository secret `SUPABASE_DB_URL` (Session pooler connection string; its user is `postgres.dfnaevcsergsphiiodtm`), then run **Actions → Apply database migrations** and type `APPLY`. It rehearses locally, runs the preflight against the target, applies everything in one transaction and runs the preflight again. The connection string is masked and never printed.
+   - **SQL editor:** paste the four files in `supabase/migrations/` as one script inside `begin; … commit;`.
+6. **Expose the schema and verify Auth and RLS.**
+   - Add `solvant` under **Project Settings → Data API → Exposed schemas**.
+   - In **Authentication → URL configuration**, set the Site URL and the redirect URL `<app>/auth/callback`.
+   - Run the RLS checks in `docs/platform/acceptance-tests.md` §A.
+7. **Deploy the web app (Vercel).**
+   - Root directory: `web`.
+   - Environment variables: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+   - Plan choice: the Hobby plan is non-commercial.
+8. **Run the live smoke tests:** `scripts/smoke_test.py --base-url <app>` (endpoint routing and denial checks), then the checklist in `acceptance-tests.md`.
+9. **Create the first administrator.** Run `select solvant.create_bootstrap_code();` in the SQL editor. Sign up in the app, confirm your e-mail and enter the code. Then turn off public sign-ups.
+10. **Connect discovery.**
+    - In **Settings → Discovery connection**, create a token.
+    - Add the GitHub secret `SIGNAL_INGEST_TOKEN` and the variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.
+    - Enable sources on the Sources page.
+    - Set `DISCOVERY_SCHEDULE_ENABLED=true`.
+11. **Small real-data test.** Run **Multi-source discovery** manually (`sources=auto`) with a few sources and a low request limit. Check the records, the source health and the absence of leaks before you enable schedules widely.
 
-### 7. Inbound e-mail (optional, needs a provider)
-
-Point the provider's inbound webhook at `<app URL>/api/engine/inbound-email`. It must send the raw message and the header `X-Signal-Token: <inbound_email token>`. Choosing and paying for a provider is your decision.
+Never put database passwords in chat, logs or files. The migration workflow refuses any connection string that isn't for `dfnaevcsergsphiiodtm`.
 
 ## Tests
 
 | Suite | Command | Covers |
 |---|---|---|
 | Python | `cd poc && python -m unittest discover -s tests` | Engine, intake, Brave non-retention, privacy, policy, engine API |
-| Database | `bash supabase/tests/run_local.sh` | 41 RLS and behaviour checks; migrations re-apply cleanly |
+| Database | `bash supabase/tests/run_local.sh` | RLS/behaviour checks, export guard, retention, preflight accept/reject cases, single-transaction rollback, recovery script |
 | Web | `cd web && npm test && npm run typecheck && npm run build` | Filters, CSV safety, types, production build |
 
 All of these run in `.github/workflows/pr-checks.yml`, with no secrets.

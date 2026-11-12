@@ -2,19 +2,22 @@ name: Multi-source discovery
 
 # Discovery for the Solvant platform. Permitted sources only (registry-gated). No outreach.
 # - Manual runs: any permitted source; Brave only when explicitly ticked AND a key exists (hard cap 100).
-# - Scheduled runs: OFF unless the repository variable DISCOVERY_SCHEDULE_ENABLED == 'true'; FREE sources only
-#   (GitHub, UK/EU tenders, feeds). Brave is never called on a schedule (no recurring paid calls without approval).
+# - Which sources run is decided by the administrator's source settings in the private database (Sources page), combined
+#   with the engine's legal gates (signal_engine.discovery.platform.plan). A dashboard toggle can never override source terms.
+# - Scheduled runs: OFF unless the repository variable DISCOVERY_SCHEDULE_ENABLED == 'true'. Evaluated hourly; each source
+#   runs only when enabled, permitted and its own schedule is due. If the plan cannot be fetched, NOTHING is collected.
+#   Paid sources (Brave) are never run on a schedule.
 # - Records go to the PRIVATE Supabase database via a hashed ingest token (secret SIGNAL_INGEST_TOKEN); public outputs
 #   are redacted, counts-only for Brave, and published only after the privacy gate passes.
 on:
   schedule:
-    - cron: "17 6 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       sources:
-        description: "Comma list: github_issues, feeds, search:brave. (hn_algolia is restricted: only after terms review)"
+        description: "auto = use the Sources page settings (recommended). Or an explicit list: github_issues, github_discussions, procurement, feeds, search:brave"
         required: false
-        default: "github_issues,procurement,feeds,search:brave"
+        default: "auto"
       since_days:
         description: "Look-back window (1-90 days)"
         required: false
@@ -77,7 +80,7 @@ jobs:
       - name: Validate inputs
         id: in
         env:
-          IN_SOURCES: ${{ inputs.sources || 'github_issues,procurement,feeds' }}
+          IN_SOURCES: ${{ inputs.sources || 'auto' }}
           IN_DAYS: ${{ inputs.since_days || '3' }}
           IN_MAX: ${{ inputs.max_requests || '20' }}
           IN_ALLOW: ${{ inputs.allow_restricted || '' }}
@@ -93,7 +96,43 @@ jobs:
           { echo "sources=$IN_SOURCES"; echo "days=$IN_DAYS"; echo "max=$IN_MAX"; echo "allow=$IN_ALLOW";
             echo "bmax=$IN_BMAX"; echo "bfresh=$IN_BFRESH"; } >> "$GITHUB_OUTPUT"
 
+      - name: Collector plan from the Sources page settings (reasons only; no secrets)
+        id: plan
+        working-directory: poc
+        env:
+          SIGNAL_INGEST_TOKEN: ${{ secrets.SIGNAL_INGEST_TOKEN }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          BRAVE_SEARCH_API_KEY_PRESENT: ${{ secrets.BRAVE_SEARCH_API_KEY != '' && 'yes' || '' }}
+          MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+        run: |
+          python -m signal_engine.discovery.platform.plan --mode "$MODE" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve what runs
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_SOURCES: ${{ steps.in.outputs.sources }}
+          PLAN_ACTIVE: ${{ steps.plan.outputs.active }}
+          PLAN_SOURCES: ${{ steps.plan.outputs.sources }}
+          PLAN_ALLOW: ${{ steps.plan.outputs.allow_restricted }}
+          PLAN_MAX: ${{ steps.plan.outputs.max_requests }}
+          IN_ALLOW: ${{ steps.in.outputs.allow }}
+          IN_MAX: ${{ steps.in.outputs.max }}
+        run: |
+          if [ "$EVENT" = "schedule" ] || [ "$IN_SOURCES" = "auto" ]; then
+            if [ "$PLAN_ACTIVE" != "true" ]; then
+              if [ "$EVENT" = "schedule" ]; then echo "Central source control is not active: nothing collected."; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+              echo "::error::Central source control is not active (see the plan step). Choose sources explicitly or connect the database."; exit 1
+            fi
+            [ -n "$PLAN_SOURCES" ] || { echo "No source is due/eligible."; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0; }
+            { echo "run=true"; echo "sources=$PLAN_SOURCES"; echo "allow=$PLAN_ALLOW"; echo "max=$PLAN_MAX"; echo "origin=plan"; } >> "$GITHUB_OUTPUT"
+          else
+            { echo "run=true"; echo "sources=$IN_SOURCES"; echo "allow=$IN_ALLOW"; echo "max=$IN_MAX"; echo "origin=explicit"; } >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Unit + regression tests (must pass before any collection)
+        if: steps.resolve.outputs.run == 'true'
         working-directory: poc
         run: python -m unittest discover -s tests
 
@@ -112,17 +151,18 @@ jobs:
 
       - name: Discover (permitted sources only)
         id: disc
+        if: steps.resolve.outputs.run == 'true'
         working-directory: poc
         env:
           GITHUB_TOKEN: ${{ github.token }}     # read-only job token: raises GitHub search limits, enables Discussions GraphQL
-          SOURCES: ${{ steps.in.outputs.sources }}
+          SOURCES: ${{ steps.resolve.outputs.sources }}
           DAYS: ${{ steps.in.outputs.days }}
-          MAX: ${{ steps.in.outputs.max }}
-          ALLOW: ${{ steps.in.outputs.allow }}
-          DISC: ${{ (github.event_name == 'schedule' || inputs.include_discussions) && '--include-discussions' || '' }}
+          MAX: ${{ steps.resolve.outputs.max }}
+          ALLOW: ${{ steps.resolve.outputs.allow }}
+          DISC: ${{ steps.resolve.outputs.origin == 'explicit' && inputs.include_discussions && '--include-discussions' || '' }}
           DRY: ${{ inputs.dry_run && '--dry-run' || '' }}
-          BRAVE: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_brave && '--enable-brave' || '' }}
-          BMAX: ${{ steps.in.outputs.bmax }}
+          BRAVE: ${{ github.event_name == 'workflow_dispatch' && (steps.resolve.outputs.origin == 'plan' && steps.plan.outputs.enable_brave == 'true' || steps.resolve.outputs.origin == 'explicit' && inputs.enable_brave) && '--enable-brave' || '' }}
+          BMAX: ${{ steps.resolve.outputs.origin == 'plan' && steps.plan.outputs.brave_max_requests || steps.in.outputs.bmax }}
           BFRESH: ${{ steps.in.outputs.bfresh }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}   # never logged; absent = Brave stays off
           RETAIN: ${{ inputs.brave_retention_permitted && '--brave-retention-permitted' || '' }}
@@ -136,7 +176,7 @@ jobs:
 
       - name: Assess, route, rank (redacted public report)
         id: report
-        if: always()               # still runs after a collector failure so safe diagnostics can be published
+        if: always() && steps.resolve.outputs.run == 'true'   # still runs after a collector failure so safe diagnostics can be published
         working-directory: poc
         run: python -m signal_engine.discovery.run report --shortlist 20 > /dev/null
 
@@ -147,7 +187,7 @@ jobs:
         env:
           SIGNAL_INGEST_TOKEN: ${{ secrets.SIGNAL_INGEST_TOKEN }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
         run: python -m signal_engine.discovery.platform.push
 
       # FAIL-CLOSED: nothing from out/discovery reaches the job summary or an artifact unless the report step
@@ -179,12 +219,12 @@ jobs:
           if-no-files-found: error
 
       - name: Fail if the privacy gate did not pass (artifacts withheld)
-        if: always() && steps.privacy.outcome != 'success'
+        if: always() && steps.resolve.outputs.run == 'true' && steps.privacy.outcome != 'success'
         run: |
           echo "::error::Report generation or the public-artifact privacy gate did not succeed: no summary and no artifact were published"; exit 1
 
       - name: Fail if any enabled connector failed (never hide failures behind green)
-        if: always()
+        if: always() && steps.resolve.outputs.run == 'true'
         env:
           DISC_EXIT: ${{ steps.disc.outputs.exit }}
         run: |

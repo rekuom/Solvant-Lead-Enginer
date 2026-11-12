@@ -24,7 +24,7 @@ PR_CHECK = "pr-checks.yml"
 ALLOWED_SECRETS = {"BRAVE_SEARCH_API_KEY": {"multi-source-discovery.yml"}, "SIGNAL_INGEST_TOKEN": {"multi-source-discovery.yml"},
                    "SUPABASE_DB_URL": {"apply-database-migrations.yml"}}
 ALLOWED_VARS = {"BRAVE_STORAGE_RIGHTS_ATTESTATION": {"multi-source-discovery.yml"}, "SUPABASE_URL": {"multi-source-discovery.yml"},
-                "SUPABASE_ANON_KEY": {"multi-source-discovery.yml"}, "DISCOVERY_SCHEDULE_ENABLED": {"multi-source-discovery.yml"}}
+                "SUPABASE_PUBLISHABLE_KEY": {"multi-source-discovery.yml"}, "DISCOVERY_SCHEDULE_ENABLED": {"multi-source-discovery.yml"}}
 # only the discovery workflow may be scheduled, and only behind an operator opt-in variable with Brave impossible on schedule
 SCHEDULABLE = {"multi-source-discovery.yml"}
 PUBLIC_FILES = ("report_public.md", "report_public.csv", "report_public.jsonl", "stage_audit.json", "run_log.json")
@@ -56,7 +56,8 @@ def check_workflows() -> list[str]:
             else:
                 if "vars.DISCOVERY_SCHEDULE_ENABLED == 'true'" not in t:
                     errs.append(f"{n}: schedule must be gated on vars.DISCOVERY_SCHEDULE_ENABLED == 'true'")
-                if "github.event_name == 'workflow_dispatch' && inputs.enable_brave" not in t:
+                brave_lines = [l.strip() for l in t.splitlines() if l.strip().startswith("BRAVE:")]
+                if not brave_lines or not all(l.startswith("BRAVE: ${{ github.event_name == 'workflow_dispatch' &&") for l in brave_lines):
                     errs.append(f"{n}: Brave must be impossible on scheduled runs")
         if "pull_request_target" in t:
             errs.append(f"{n}: pull_request_target not allowed")
@@ -85,12 +86,13 @@ def check_workflows() -> list[str]:
                     errs.append(f"{n}: {kind}.{name} not allowed here")
         if "SIGNAL_INGEST_TOKEN" in t:
             holders = [s.splitlines()[0] for s in re.split(r"\n      - ", t) if "secrets.SIGNAL_INGEST_TOKEN" in s]
-            if any("Push to the private platform database" not in h for h in holders):
+            if any(not ("Push to the private platform database" in h or "Collector plan" in h) for h in holders):
                 errs.append(f"{n}: SIGNAL_INGEST_TOKEN referenced outside the platform push step: {holders}")
         if "BRAVE_SEARCH_API_KEY" in t:
             # the key may appear only in the Discover step's env
             steps = re.split(r"\n      - ", t)
-            holders = [s.splitlines()[0] for s in steps if "secrets.BRAVE_SEARCH_API_KEY" in s]
+            # the key VALUE only in the Discover step; the plan step may test presence only (secrets.X != '')
+            holders = [s.splitlines()[0] for s in steps if re.search(r"secrets\.BRAVE_SEARCH_API_KEY(?!\s*!=\s*'')", s)]
             if any("Discover" not in h for h in holders):
                 errs.append(f"{n}: BRAVE_SEARCH_API_KEY referenced outside the Discover step: {holders}")
         if "upload-artifact" in t:

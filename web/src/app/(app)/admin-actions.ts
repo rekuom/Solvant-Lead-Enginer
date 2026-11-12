@@ -13,15 +13,23 @@ export async function updateSource(_: State, form: FormData): Promise<State> {
   if (schedule && !CRON.test(schedule)) return { error: "Schedule must be a 5-field cron expression (UTC)" };
   const budget = Number(str(form, "monthly_budget_usd", 12) || 0);
   if (!Number.isFinite(budget) || budget < 0) return { error: "Budget must be zero or more" };
+  const exportAllowed = form.get("export_allowed") === "on";
+  const restrictedApproval = str(form, "restricted_approval", 300);
+  const maxRequests = Math.max(1, Math.min(30, Number(str(form, "max_requests", 3) || 20) || 20));
+  const { data: current } = await supabase.from("sources").select("config").eq("key", key).maybeSingle();
+  const config = { ...((current?.config as Record<string, unknown>) ?? {}), max_requests: maxRequests,
+    restricted_approval: restrictedApproval ? { basis: restrictedApproval, recorded_at: new Date().toISOString() } : null };
   const { error } = await supabase.from("sources").update({
     enabled: form.get("enabled") === "on", schedule_cron: schedule || null, monthly_budget_usd: budget,
-    notes: str(form, "notes", 2000) || null,
+    notes: str(form, "notes", 2000) || null, export_allowed: exportAllowed, export_basis: str(form, "export_basis", 500) || null, config,
   }).eq("key", key);
   revalidatePath("/sources");
   if (error) {
-    return { error: error.message.includes("sources_enable_guard")
-      ? "Blocked: this source's permission status (unknown/prohibited) or a missing budget for a paid source prevents automated collection."
-      : error.message };
+    if (error.message.includes("sources_enable_guard"))
+      return { error: "Blocked: unknown/prohibited permission status, or a paid source without a monthly budget, cannot run automatically." };
+    if (error.message.includes("sources_export_guard"))
+      return { error: "Blocked: exporting needs a recorded contractual/licence basis (10+ characters), and is impossible for unknown/prohibited sources." };
+    return { error: error.message };
   }
   return { error: "", ok: "Saved" };
 }

@@ -35,8 +35,8 @@ export default async function Settings() {
           <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm">
             <li>Create a <b>Discovery</b> token below and copy it.</li>
             <li>In GitHub: <b>rekuom/Solvant-Lead-Enginer → Settings → Secrets and variables → Actions</b>: add secret <code>SIGNAL_INGEST_TOKEN</code>.</li>
-            <li>Add repository variables <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> (public values).</li>
-            <li>Optional: set variable <code>DISCOVERY_SCHEDULE_ENABLED</code> = <code>true</code> for daily free-source collection.</li>
+            <li>Add repository variables <code>SUPABASE_URL</code> and <code>SUPABASE_PUBLISHABLE_KEY</code> (public values; the <code>sb_publishable_…</code> key).</li>
+            <li>Set variable <code>DISCOVERY_SCHEDULE_ENABLED</code> = <code>true</code> to let the Sources page settings drive hourly-evaluated automatic collection.</li>
           </ol>
           <TokenForm />
           <ul className="mt-3 divide-y line text-sm">
@@ -64,7 +64,13 @@ export default async function Settings() {
 
       {admin ? (
         <Section title="Data retention">
-          <p className="text-sm">Excerpts are kept for <b>{String(setting("retention_days")) || "365"}</b> days, then removed from records that never progressed beyond review. Records, classifications and audit history remain.</p>
+          <p className="text-sm">Excerpts are kept for <b>{String(setting("retention_days")) || "365"}</b> days, then removed from records that never progressed beyond review
+            (including linked evidence copies and derived evidence snippets). Records, classification history and activity entries remain; audit rows are kept for{" "}
+            <b>{String((setting("retention_policy") as Record<string, unknown>).audit_days ?? 730)}</b> days.</p>
+          <p className="mt-1 text-sm">Automatic daily enforcement:{" "}
+            {(setting("retention_policy") as Record<string, unknown>).enabled
+              ? <Badge tone="green">enabled</Badge>
+              : <Badge tone="amber">disabled — awaiting approval of the retention rules</Badge>}</p>
           <div className="mt-2"><PurgeForm /></div>
         </Section>
       ) : null}

@@ -1,8 +1,10 @@
-"""Vercel Python function: the Solvant qualification engine behind the web app.
+"""Shared implementation of the Solvant engine HTTP endpoints (imported by web/api/engine/*.py).
 
-POST /api/engine/intake         browser intake (user session JWT required; saved through RLS as that user)
-POST /api/engine/inbound-email  inbound-email webhook (ingest token with scope inbound_email; checked in the database)
-GET  /api/engine/health
+One Vercel function file per endpoint, each with its operation FIXED (class attribute OP), so routing never depends on
+how the platform rewrites or presents the request path:
+  web/api/engine/intake.py         POST /api/engine/intake         user session JWT required; saved through RLS as that user
+  web/api/engine/inbound-email.py  POST /api/engine/inbound-email  ingest token (scope inbound_email) checked in the database
+  web/api/engine/health.py         GET  /api/engine/health
 
 No service-role key is used anywhere: authority comes from the user's JWT or a hashed, revocable ingest token.
 External content is treated as untrusted data; files are size-limited and never stored raw.
@@ -11,11 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
-import os
-import sys
 from http.server import BaseHTTPRequestHandler
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_engine"))
 
 from signal_engine.discovery.platform import ENGINE_VERSION  # noqa: E402
 from signal_engine.discovery.platform.intake import IntakeRejected, is_synthetic, process  # noqa: E402
@@ -81,40 +79,39 @@ def handle_inbound(headers: dict, body: bytes) -> tuple[int, dict]:
     return 200, res if isinstance(res, dict) else {}
 
 
-class handler(BaseHTTPRequestHandler):  # noqa: N801 (Vercel convention)
+class EngineHandler(BaseHTTPRequestHandler):
+    """Subclassed per endpoint with OP = "health" | "intake" | "inbound-email"."""
+    OP = ""
+
+    def log_message(self, *args) -> None:   # no request lines (paths/headers) in function logs
+        pass
+
     def _send(self, status: int, payload: dict) -> None:
         data = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Solvant-Endpoint", self.OP)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
-    def _route(self) -> str:
-        p = self.path.split("?", 1)[0].rstrip("/")
-        return p.rsplit("/", 1)[-1]
-
     def do_GET(self) -> None:  # noqa: N802
-        if self._route() in ("health", "engine", "engine.py"):
-            return self._send(200, {"ok": True, "engine": ENGINE_VERSION})
-        return self._send(404, {"error": "not found"})
+        if self.OP == "health":
+            return self._send(200, {"ok": True, "endpoint": "health", "engine": ENGINE_VERSION})
+        return self._send(405, {"error": "method not allowed", "endpoint": self.OP})
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.OP not in ("intake", "inbound-email"):
+            return self._send(405, {"error": "method not allowed", "endpoint": self.OP})
         length = int(self.headers.get("content-length") or 0)
         if length <= 0 or length > MAX_BODY:
             return self._send(413, {"error": "request body missing or too large"})
         body = self.rfile.read(length)
         headers = {k.lower(): v for k, v in self.headers.items()}
-        route = self._route()
         try:
-            if route == "intake":
-                status, payload = handle_intake(headers, body)
-            elif route == "inbound-email":
-                status, payload = handle_inbound(headers, body)
-            else:
-                status, payload = 404, {"error": "not found"}
+            status, payload = handle_intake(headers, body) if self.OP == "intake" else handle_inbound(headers, body)
         except Exception:  # never echo internals or submitted content
             status, payload = 500, {"error": "internal error"}
         return self._send(status, payload)

@@ -1,10 +1,12 @@
 -- Minimal stand-in for the Supabase platform objects the migrations rely on (LOCAL TESTS ONLY; never applied remotely).
-create role anon nologin;
-create role authenticated nologin;
-create role service_role nologin bypassrls;
+do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
+do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role nologin bypassrls; exception when duplicate_object then null; end $$;
 create schema auth;
 create schema extensions;
+create schema storage;
 grant usage on schema auth, extensions, public to anon, authenticated;
+do $$ begin create role authenticator noinherit nologin; exception when duplicate_object then null; end $$;
 create table auth.users (id uuid primary key, email text);
 create function auth.uid() returns uuid language sql stable as $$
   select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''),

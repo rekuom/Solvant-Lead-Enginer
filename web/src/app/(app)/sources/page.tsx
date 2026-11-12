@@ -20,12 +20,15 @@ function health(s: Record<string, any>): { label: string; tone: Tone } {
 export default async function Sources({ searchParams }: { searchParams: Promise<{ family?: string }> }) {
   const { supabase, role } = await requireMember();
   const sp = await searchParams;
-  const [{ data: perf }, { data: srcs }, { data: runs }] = await Promise.all([
+  const [{ data: perf }, { data: srcs }, { data: runs }, { data: seen }] = await Promise.all([
     supabase.from("source_performance").select("*"),
     supabase.from("sources").select("*").order("family").order("name"),
     supabase.from("discovery_runs").select("source_key,started_at,status,requests,records,failed_requests,est_cost_usd,error_kind")
       .order("started_at", { ascending: false }).limit(60),
+    supabase.from("app_settings").select("value").eq("key", "collector_last_seen").maybeSingle(),
   ]);
+  const lastSeen = seen?.value ? new Date(String(seen.value)) : null;
+  const controlActive = !!lastSeen && Date.now() - lastSeen.getTime() < 26 * 3600e3;
   const perfBy = Object.fromEntries((perf ?? []).map((p) => [p.source_key, p]));
   const families = Array.from(new Set((srcs ?? []).map((s) => s.family)));
   const list = (srcs ?? []).filter((s) => !sp.family || s.family === sp.family);
@@ -34,6 +37,15 @@ export default async function Sources({ searchParams }: { searchParams: Promise<
     <div className="space-y-5">
       <PageHeader title="Source control centre"
         subtitle="Every source the engine knows about, its permission status and health. Restricted, unknown and paid sources stay off until their requirements are met." />
+      <div className={`panel p-3 text-sm ${controlActive ? "" : "border-amber-300 bg-amber-50 dark:bg-amber-500/10"}`}>
+        {controlActive ? (
+          <span><Badge tone="green">Automated collection active</Badge> The GitHub Actions collector last read these settings {fmtDate(lastSeen!.toISOString(), true)}.
+            Schedules are evaluated hourly; a source runs only when enabled, permitted by its terms, due, within budget and with its credentials present.</span>
+        ) : (
+          <span><Badge tone="amber">Automated collection NOT active</Badge> These settings are saved, but no collector has read them in the last 26 hours,
+            so nothing runs automatically yet. Connect it under Settings → Discovery connection and set the repository variable DISCOVERY_SCHEDULE_ENABLED=true.</span>
+        )}
+      </div>
       <div className="flex flex-wrap gap-1 text-sm">
         <Link href="/sources" className={`btn ${!sp.family ? "btn-primary" : ""}`}>All ({srcs?.length ?? 0})</Link>
         {families.map((f) => <Link key={f} href={`/sources?family=${f}`} className={`btn ${sp.family === f ? "btn-primary" : ""}`}>{humanize(f)}</Link>)}
@@ -55,14 +67,15 @@ export default async function Sources({ searchParams }: { searchParams: Promise<
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4 lg:grid-cols-8">
                 <div><dt className="muted text-xs">Last run</dt><dd>{fmtDate(s.last_run_at, true)}</dd></div>
                 <div><dt className="muted text-xs">Last success</dt><dd>{fmtDate(s.last_success_at, true)}</dd></div>
-                <div><dt className="muted text-xs">Next scheduled</dt><dd>{s.enabled && s.schedule_cron ? <code className="text-xs">{s.schedule_cron}</code> : "—"}</dd></div>
+                <div><dt className="muted text-xs">Schedule (UTC)</dt><dd>{s.enabled && s.schedule_cron && s.automated ? <code className="text-xs">{s.schedule_cron}</code> : "—"}{s.paid ? <span className="muted block text-xs">paid: manual runs only</span> : null}</dd></div>
                 <div><dt className="muted text-xs">Records</dt><dd><Link className="hover:underline" href={`/opportunities?source=${s.key}&excluded=1`}>{p.records ?? 0}</Link></dd></div>
-                <div><dt className="muted text-xs">Opportunities</dt><dd>{(p.records ?? 0) - 0 ? <Link className="hover:underline" href={`/opportunities?source=${s.key}`}>{p.relevant ?? 0} relevant</Link> : 0}</dd></div>
+                <div><dt className="muted text-xs">Relevant</dt><dd><Link className="hover:underline" href={`/opportunities?source=${s.key}`}>{p.relevant ?? 0}</Link></dd></div>
                 <div><dt className="muted text-xs">Verified</dt><dd>{p.verified ?? 0}</dd></div>
                 <div><dt className="muted text-xs">Won / revenue</dt><dd>{p.won ?? 0} · £{Number(p.revenue ?? 0).toLocaleString("en-GB")}</dd></div>
                 <div><dt className="muted text-xs">Cost (est. API / leads)</dt><dd>${Number(p.est_api_cost_usd ?? 0).toFixed(2)} / £{Number(p.acquisition_costs ?? 0).toFixed(0)}</dd></div>
               </dl>
               {s.last_error ? <p className="mt-2 text-sm text-red-600">Last error: {s.last_error}</p> : null}
+              <p className="muted mt-1 text-xs">Export: {s.export_allowed ? `permitted — ${s.export_basis}` : "not permitted (no contractual/licence basis recorded)"}</p>
               <details className="mt-2 text-sm"><summary className="muted cursor-pointer">Permission notes &amp; requirements</summary>
                 <p className="mt-1 whitespace-pre-wrap">{s.notes}</p>
                 {s.requirements && s.requirements !== "null" ? <p className="muted mt-1 text-xs">Evidence: {s.requirements}</p> : null}

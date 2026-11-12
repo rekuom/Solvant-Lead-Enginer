@@ -138,7 +138,7 @@ class SchedulePolicy(unittest.TestCase):
         wf = (pc.WF / "multi-source-discovery.yml").read_text()
         self.assertEqual(pc.check_workflows(), [])
         ungated = wf.replace("vars.DISCOVERY_SCHEDULE_ENABLED == 'true'", "true")
-        brave_on_schedule = wf.replace("github.event_name == 'workflow_dispatch' && inputs.enable_brave", "inputs.enable_brave")
+        brave_on_schedule = wf.replace("BRAVE: ${{ github.event_name == 'workflow_dispatch' && ", "BRAVE: ${{ ")
         orig = (pc.WF / "multi-source-discovery.yml")
         for bad, expect in ((ungated, "gated"), (brave_on_schedule, "Brave must be impossible")):
             try:
@@ -146,3 +146,83 @@ class SchedulePolicy(unittest.TestCase):
                 self.assertTrue(any(expect in e for e in pc.check_workflows()), expect)
             finally:
                 orig.write_text(wf)
+
+
+class CollectorPlan(unittest.TestCase):
+    """Dashboard source settings decide automated execution, but can never override source terms, budgets or credentials."""
+
+    def _rows(self, **over):
+        base = {"github_issues": dict(enabled=True, permission_status="permitted", schedule_cron="17 6 * * *"),
+                "find_a_tender": dict(enabled=False, permission_status="permitted", schedule_cron="17 6 * * *"),
+                "hn_algolia": dict(enabled=True, permission_status="restricted", schedule_cron="17 * * * *"),
+                "gitlab_issues": dict(enabled=True, permission_status="unknown", schedule_cron="17 * * * *"),
+                "upwork": dict(enabled=True, permission_status="restricted", schedule_cron="17 * * * *"),
+                "web_search_brave": dict(enabled=True, permission_status="licensed", paid=True, monthly_budget_usd=0, schedule_cron="17 * * * *")}
+        rows = []
+        for k, v in base.items():
+            rows.append({"key": k, "automated": True, "paid": False, "monthly_budget_usd": 0, "last_run_at": None, **v, **over.get(k, {})})
+        return rows
+
+    def _run(self, rows, mode="scheduled", env=None, now="2026-11-12T06:20:00+00:00"):
+        from datetime import datetime
+        from signal_engine.discovery.platform.plan import decide
+        return {d.key: d for d in decide(rows, mode, now=datetime.fromisoformat(now), env=env or {}).decisions}
+
+    def test_enabled_permitted_due_source_runs_and_disabled_does_not(self):
+        d = self._run(self._rows())
+        self.assertTrue(d["github_issues"].run)
+        self.assertEqual(d["find_a_tender"].reason, "disabled by an administrator")
+
+    def test_toggle_cannot_override_terms(self):
+        d = self._run(self._rows())
+        self.assertFalse(d["gitlab_issues"].run)               # unknown terms
+        self.assertFalse(d["hn_algolia"].run)                  # restricted, no recorded approval
+        self.assertIn("no automated connector", d["upwork"].reason)
+        approved = self._run(self._rows(hn_algolia={"restricted_approval": {"basis": "terms reviewed by RM 2026-11-12"}}))
+        self.assertTrue(approved["hn_algolia"].run and approved["hn_algolia"].allow_restricted)
+
+    def test_schedule_respected(self):
+        self.assertEqual(self._run(self._rows(), now="2026-11-12T09:20:00+00:00")["github_issues"].reason, "eligible")   # never run: looks back 25h
+        ran = self._rows(github_issues={"last_run_at": "2026-11-12T06:18:00+00:00"})
+        self.assertEqual(self._run(ran, now="2026-11-12T09:20:00+00:00")["github_issues"].reason, "not due yet")
+        self.assertTrue(self._run(ran, mode="manual", now="2026-11-12T09:20:00+00:00")["github_issues"].run)   # manual ignores schedule
+
+    def test_paid_source_budget_credential_and_schedule(self):
+        d = self._run(self._rows(), mode="manual", env={"BRAVE_SEARCH_API_KEY": "k"})
+        self.assertEqual(d["web_search_brave"].reason, "paid source without an approved monthly budget")
+        funded = self._rows(web_search_brave={"monthly_budget_usd": 0.2, "month_spend_usd": 0.1})
+        self.assertEqual(self._run(funded, mode="manual")["web_search_brave"].reason, "credential not configured")
+        ok = self._run(funded, mode="manual", env={"BRAVE_SEARCH_API_KEY": "k"})["web_search_brave"]
+        self.assertEqual((ok.run, ok.max_requests), (True, 20))                         # capped by remaining budget ($0.10 / $0.005)
+        self.assertFalse(self._run(funded, mode="scheduled", env={"BRAVE_SEARCH_API_KEY": "k"})["web_search_brave"].run)
+        spent = self._rows(web_search_brave={"monthly_budget_usd": 1, "month_spend_usd": 1})
+        self.assertIn("budget used", self._run(spent, mode="manual", env={"BRAVE_SEARCH_API_KEY": "k"})["web_search_brave"].reason)
+
+    def test_rate_limit_and_outputs(self):
+        from datetime import datetime
+        from signal_engine.discovery.platform.plan import decide, to_outputs
+        rows = self._rows(github_issues={"max_requests": 7})
+        out = to_outputs(decide(rows, "scheduled", now=datetime.fromisoformat("2026-11-12T06:20:00+00:00"), env={}))
+        self.assertEqual((out["sources"], out["max_requests"], out["enable_brave"]), ("github_issues", "7", "false"))
+
+    def test_no_plan_means_nothing_runs_on_schedule(self):
+        import os
+        from signal_engine.discovery.platform.plan import fetch_plan, to_outputs
+        old = os.environ.pop("SIGNAL_INGEST_TOKEN", None)
+        try:
+            p = fetch_plan("scheduled")
+        finally:
+            if old is not None:
+                os.environ["SIGNAL_INGEST_TOKEN"] = old
+        self.assertFalse(p.active)
+        self.assertEqual(to_outputs(p)["sources"], "")
+
+    def test_cron_matcher(self):
+        from datetime import datetime
+        from signal_engine.discovery.platform.plan import cron_matches
+        t = datetime.fromisoformat("2026-11-15T06:17:00+00:00")          # a Sunday
+        self.assertTrue(cron_matches("17 6 * * *", t))
+        self.assertTrue(cron_matches("*/17 6 * * 0", t))
+        self.assertTrue(cron_matches("17 6 * * 7", t))
+        self.assertFalse(cron_matches("17 6 * * 1-5", t))
+        self.assertTrue(cron_matches("0-30/17 6 15 11 *", t))

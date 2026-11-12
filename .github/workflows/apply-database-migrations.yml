@@ -1,9 +1,11 @@
 name: Apply database migrations
 
-# Manual only. Applies supabase/migrations/*.sql (non-destructive: create-if-not-exists / create-or-replace) to the
-# dedicated Solvant project, after running the same files against a throwaway local Postgres first.
-# Needs repository secret SUPABASE_DB_URL (the project's Postgres connection string, Session pooler, with password).
-# Logs contain DDL notices only — never lead data. Type APPLY to confirm.
+# Manual only. Applies supabase/migrations/*.sql to the dedicated Solvant project (all objects live in schema `solvant`).
+# Order: rehearsal on a throwaway local Postgres -> READ-ONLY preflight against the target (rejects the wrong project,
+# a foreign `solvant` schema, unexpected objects, newer ledger versions, pg_trgm elsewhere) -> apply ALL files in ONE
+# transaction (any error rolls everything back). Needs repository secret SUPABASE_DB_URL (Session pooler connection
+# string; its user is postgres.<project ref>). The connection string is never printed. Logs contain no lead data.
+# Run only after PR review + merge and after confirming a backup/restore point exists (see docs/platform/README.md).
 on:
   workflow_dispatch:
     inputs:
@@ -33,14 +35,27 @@ jobs:
         run: '[ "$CONFIRM" = "APPLY" ] || { echo "::error::Type APPLY to confirm"; exit 1; }'
       - name: Rehearse on a local Postgres (must pass first)
         run: bash supabase/tests/run_local.sh
-      - name: Apply to the dedicated project
+      - name: Read-only preflight against the target (must report VERDICT OK)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           [ -n "$SUPABASE_DB_URL" ] || { echo "::error::Secret SUPABASE_DB_URL is not set"; exit 1; }
-          case "$SUPABASE_DB_URL" in *dfnaevcsergsphiiodtm*) ;; *) echo "::error::Connection string is not for project dfnaevcsergsphiiodtm"; exit 1;; esac
-          for f in supabase/migrations/*.sql; do
-            echo "applying $(basename "$f")"
-            PGOPTIONS="-c client_min_messages=warning" psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -1 -f "$f" > /dev/null
-          done
-          psql "$SUPABASE_DB_URL" -At -c "select count(*) || ' sources seeded' from public.sources"
+          echo "::add-mask::$SUPABASE_DB_URL"
+          python3 supabase/scripts/preflight.py --expect-ref dfnaevcsergsphiiodtm | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply all migrations in one transaction
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "::add-mask::$SUPABASE_DB_URL"
+          cat supabase/migrations/*.sql > "$RUNNER_TEMP/all.sql"
+          PGOPTIONS="-c client_min_messages=warning" psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -q -1 -f "$RUNNER_TEMP/all.sql" > /dev/null
+          psql "$SUPABASE_DB_URL" -X -At -c "select 'ledger: ' || string_agg(version, ', ' order by version) from solvant.schema_migrations"
+          psql "$SUPABASE_DB_URL" -X -At -c "select count(*) || ' sources seeded' from solvant.sources"
+
+      - name: Post-apply preflight (expects this app's own schema, no foreign objects)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "::add-mask::$SUPABASE_DB_URL"
+          python3 supabase/scripts/preflight.py --expect-ref dfnaevcsergsphiiodtm | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,39 +1,52 @@
--- Solvant Signal Engine — core schema (non-destructive: creates only; never drops or alters existing objects).
--- Target: dedicated Supabase project dfnaevcsergsphiiodtm, schema public.
+-- Solvant Signal Engine — core schema. Creates objects only inside the app-owned `solvant` schema (plus pg_trgm in `extensions`).
+-- Target: dedicated Supabase project dfnaevcsergsphiiodtm, application schema `solvant` (nothing is created in `public`).
 -- Design reference: docs/phase4/supabase-schema-proposal.sql (reviewed, not trusted verbatim).
 -- Privacy: the repository is public; this file contains structure only, never data about people.
+-- Safety: run supabase/preflight/preflight.sql first. It rejects the wrong project, a pre-existing foreign `solvant` schema,
+-- and an incompatible pg_trgm installation. Apply all files in ONE transaction (the workflow does) so a failure rolls back.
+
+create schema if not exists solvant;
+comment on schema solvant is 'Solvant Signal Engine application schema (owned by this app only).';
+grant usage on schema solvant to anon, authenticated, service_role;
+
+create table if not exists solvant.schema_migrations (
+  version    text primary key,
+  applied_at timestamptz not null default now()
+);
+alter table solvant.schema_migrations enable row level security;
+revoke all on solvant.schema_migrations from anon, authenticated;
 
 create extension if not exists pg_trgm with schema extensions;
 
 -- ----------------------------------------------------------------------------- enums
 do $$ begin
-  create type public.app_role as enum ('admin', 'editor', 'viewer');
+  create type solvant.app_role as enum ('admin', 'editor', 'viewer');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type public.sales_stage as enum ('discovered', 'needs_review', 'verified', 'qualified', 'contact_planned', 'contacted',
+  create type solvant.sales_stage as enum ('discovered', 'needs_review', 'verified', 'qualified', 'contact_planned', 'contacted',
     'replied', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost', 'archived');
 exception when duplicate_object then null; end $$;
 
 -- ----------------------------------------------------------------------------- people using the app
-create table if not exists public.members (
+create table if not exists solvant.members (
   user_id      uuid primary key references auth.users (id) on delete cascade,
-  role         public.app_role not null default 'viewer',
+  role         solvant.app_role not null default 'viewer',
   display_name text check (char_length(display_name) <= 80),
   created_at   timestamptz not null default now()
 );
-comment on table public.members is 'Application members. Being signed in is NOT enough: only members can read lead data.';
+comment on table solvant.members is 'Application members. Being signed in is NOT enough: only members can read lead data.';
 
-create table if not exists public.admin_bootstrap (
+create table if not exists solvant.admin_bootstrap (
   id         uuid primary key default gen_random_uuid(),
   code_hash  text not null,
   expires_at timestamptz not null,
   used_at    timestamptz,
   used_by    uuid references auth.users (id) on delete set null
 );
-comment on table public.admin_bootstrap is 'One-time codes that let the owner claim the first admin seat. No policies: unreadable via the API.';
+comment on table solvant.admin_bootstrap is 'One-time codes that let the owner claim the first admin seat. No policies: unreadable via the API.';
 
-create table if not exists public.app_settings (
+create table if not exists solvant.app_settings (
   key        text primary key check (key ~ '^[a-z0-9_]{2,60}$'),
   value      jsonb not null,
   updated_at timestamptz not null default now(),
@@ -41,7 +54,7 @@ create table if not exists public.app_settings (
 );
 
 -- ----------------------------------------------------------------------------- sources and collection
-create table if not exists public.sources (
+create table if not exists solvant.sources (
   key                  text primary key check (key ~ '^[a-z0-9_]{2,80}$'),
   name                 text not null,
   family               text not null,
@@ -52,6 +65,7 @@ create table if not exists public.sources (
   automated            boolean not null default false,
   paid                 boolean not null default false,
   export_allowed       boolean not null default false,
+  export_basis         text check (char_length(export_basis) <= 500),   -- contractual / licence basis for exporting records
   pipelines            text[] not null default '{}',
   contact_route        text,
   notes                text,
@@ -69,14 +83,18 @@ create table if not exists public.sources (
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   -- restricted / unknown / prohibited / paid sources can never be switched on for automated collection here
+  -- exports need a recorded basis, and are impossible for sources whose terms are unknown or that prohibit collection
+  constraint sources_export_guard check (
+    not export_allowed or (permission_status not in ('unknown', 'prohibited') and coalesce(char_length(trim(export_basis)), 0) >= 10)
+  ),
   constraint sources_enable_guard check (
     not (enabled and automated and (permission_status in ('unknown', 'prohibited') or (paid and monthly_budget_usd = 0)))
   )
 );
 
-create table if not exists public.discovery_runs (
+create table if not exists solvant.discovery_runs (
   id              uuid primary key default gen_random_uuid(),
-  source_key      text references public.sources (key) on delete set null,
+  source_key      text references solvant.sources (key) on delete set null,
   origin          text not null check (origin in ('github_actions', 'web_intake', 'inbound_email', 'manual', 'scheduler')),
   external_run_id text,
   started_at      timestamptz not null default now(),
@@ -91,9 +109,9 @@ create table if not exists public.discovery_runs (
   error_kind      text,
   detail          jsonb not null default '{}'::jsonb   -- counts only; never URLs/snippets of non-retainable sources
 );
-create index if not exists discovery_runs_source_idx on public.discovery_runs (source_key, started_at desc);
+create index if not exists discovery_runs_source_idx on solvant.discovery_runs (source_key, started_at desc);
 
-create table if not exists public.search_queries (
+create table if not exists solvant.search_queries (
   query_id         text primary key,
   provider         text not null,
   category         text,
@@ -106,7 +124,7 @@ create table if not exists public.search_queries (
 );
 
 -- ----------------------------------------------------------------------------- companies and leads
-create table if not exists public.companies (
+create table if not exists solvant.companies (
   id              uuid primary key default gen_random_uuid(),
   name            text not null check (char_length(name) between 1 and 200),
   normalized_name text generated always as (lower(regexp_replace(name, '[^A-Za-z0-9]+', '', 'g'))) stored,
@@ -118,13 +136,13 @@ create table if not exists public.companies (
   notes           text,
   created_at      timestamptz not null default now()
 );
-create unique index if not exists companies_normalized_uq on public.companies (normalized_name, coalesce(country, ''));
+create unique index if not exists companies_normalized_uq on solvant.companies (normalized_name, coalesce(country, ''));
 
-create table if not exists public.opportunities (
+create table if not exists solvant.opportunities (
   id                    uuid primary key default gen_random_uuid(),
   canonical_url         text not null unique,
   fingerprint           text,
-  source_key            text not null references public.sources (key),
+  source_key            text not null references solvant.sources (key),
   source_id             text,
   url                   text not null check (url ~ '^https://'),
   title                 text not null default '',
@@ -138,7 +156,7 @@ create table if not exists public.opportunities (
   location              text,
   org_type              text,
   organisation          text,                 -- only when the source states it
-  company_id            uuid references public.companies (id) on delete set null,
+  company_id            uuid references solvant.companies (id) on delete set null,
   technologies          text[] not null default '{}',
   budget_text           text,
   verification          text not null check (verification in ('api_verified', 'reviewer_verified', 'user_submitted', 'licensed_import', 'search_snippet_only')),
@@ -161,7 +179,7 @@ create table if not exists public.opportunities (
   pipeline_reason       text,
   rank_score            integer not null default 0,
   suggested_service     text,
-  stage                 public.sales_stage not null default 'discovered',
+  stage                 solvant.sales_stage not null default 'discovered',
   owner_id              uuid references auth.users (id) on delete set null,
   follow_up_at          timestamptz,
   deal_value            numeric(12, 2) check (deal_value is null or deal_value >= 0),
@@ -169,7 +187,7 @@ create table if not exists public.opportunities (
   won_at                timestamptz,
   lost_reason           text,
   win_reason            text,
-  duplicate_of          uuid references public.opportunities (id) on delete set null,
+  duplicate_of          uuid references solvant.opportunities (id) on delete set null,
   acquisition_cost      numeric(10, 2) check (acquisition_cost is null or acquisition_cost >= 0),
   query_id              text,
   discovered_via        text,
@@ -184,18 +202,18 @@ create table if not exists public.opportunities (
   -- Brave Data-for-Search/AI output may never be retained; only original-source records are stored
   constraint opportunities_no_brave check (source_key <> 'web_search_brave')
 );
-create index if not exists opportunities_pipeline_idx on public.opportunities (pipeline, rank_score desc);
-create index if not exists opportunities_stage_idx on public.opportunities (stage);
-create index if not exists opportunities_discovered_idx on public.opportunities (discovered_at desc);
-create index if not exists opportunities_source_idx on public.opportunities (source_key);
-create index if not exists opportunities_followup_idx on public.opportunities (follow_up_at) where follow_up_at is not null;
-create index if not exists opportunities_search_idx on public.opportunities using gin (search);
-create index if not exists opportunities_fp_idx on public.opportunities (fingerprint);
-create index if not exists opportunities_title_trgm on public.opportunities using gin (title extensions.gin_trgm_ops);
+create index if not exists opportunities_pipeline_idx on solvant.opportunities (pipeline, rank_score desc);
+create index if not exists opportunities_stage_idx on solvant.opportunities (stage);
+create index if not exists opportunities_discovered_idx on solvant.opportunities (discovered_at desc);
+create index if not exists opportunities_source_idx on solvant.opportunities (source_key);
+create index if not exists opportunities_followup_idx on solvant.opportunities (follow_up_at) where follow_up_at is not null;
+create index if not exists opportunities_search_idx on solvant.opportunities using gin (search);
+create index if not exists opportunities_fp_idx on solvant.opportunities (fingerprint);
+create index if not exists opportunities_title_trgm on solvant.opportunities using gin (title extensions.gin_trgm_ops);
 
-create table if not exists public.evidence (
+create table if not exists solvant.evidence (
   id             uuid primary key default gen_random_uuid(),
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
+  opportunity_id uuid not null references solvant.opportunities (id) on delete cascade,
   kind           text not null check (kind in ('source_fact', 'reviewer_note', 'verification')),
   source_key     text,
   url            text check (url is null or url ~ '^https://'),
@@ -205,12 +223,12 @@ create table if not exists public.evidence (
   rights_note    text,
   created_by     uuid references auth.users (id) on delete set null
 );
-create index if not exists evidence_opp_idx on public.evidence (opportunity_id);
+create index if not exists evidence_opp_idx on solvant.evidence (opportunity_id);
 
 -- Classification history: every engine run and every human override is a NEW row; nothing is overwritten.
-create table if not exists public.classifications (
+create table if not exists solvant.classifications (
   id                uuid primary key default gen_random_uuid(),
-  opportunity_id    uuid not null references public.opportunities (id) on delete cascade,
+  opportunity_id    uuid not null references solvant.opportunities (id) on delete cascade,
   engine            text not null check (engine in ('rules', 'llm', 'human')),
   engine_version    text,
   is_current        boolean not null default true,
@@ -231,13 +249,13 @@ create table if not exists public.classifications (
   created_at        timestamptz not null default now(),
   constraint human_override_needs_reason check (engine <> 'human' or coalesce(char_length(reason), 0) >= 3)
 );
-create index if not exists classifications_opp_idx on public.classifications (opportunity_id, created_at desc);
-create unique index if not exists classifications_one_current on public.classifications (opportunity_id) where is_current;
+create index if not exists classifications_opp_idx on solvant.classifications (opportunity_id, created_at desc);
+create unique index if not exists classifications_one_current on solvant.classifications (opportunity_id) where is_current;
 
-create table if not exists public.contact_channels (
+create table if not exists solvant.contact_channels (
   id             uuid primary key default gen_random_uuid(),
-  opportunity_id uuid references public.opportunities (id) on delete cascade,
-  company_id     uuid references public.companies (id) on delete cascade,
+  opportunity_id uuid references solvant.opportunities (id) on delete cascade,
+  company_id     uuid references solvant.companies (id) on delete cascade,
   kind           text not null check (kind in ('in_platform', 'reply_in_thread', 'procurement_portal', 'company_website',
                    'company_contact_form', 'business_email', 'business_phone', 'company_profile')),
   value          text check (char_length(value) <= 300),
@@ -248,10 +266,10 @@ create table if not exists public.contact_channels (
   created_at     timestamptz not null default now(),
   check (opportunity_id is not null or company_id is not null)
 );
-comment on table public.contact_channels is 'Professional contact routes only. No personal e-mails/phones of private individuals.';
+comment on table solvant.contact_channels is 'Professional contact routes only. No personal e-mails/phones of private individuals.';
 
 -- ----------------------------------------------------------------------------- intake
-create table if not exists public.intake_submissions (
+create table if not exists solvant.intake_submissions (
   id            uuid primary key default gen_random_uuid(),
   origin        text not null check (origin in ('manual', 'paste', 'email_file', 'csv', 'json', 'inbound_email')),
   source_key    text,
@@ -265,20 +283,20 @@ create table if not exists public.intake_submissions (
   created_by    uuid references auth.users (id) on delete set null,
   created_at    timestamptz not null default now()
 );
-comment on table public.intake_submissions is 'Intake log. Raw uploaded files are NOT stored; only the parsed, redacted records and these counts.';
+comment on table solvant.intake_submissions is 'Intake log. Raw uploaded files are NOT stored; only the parsed, redacted records and these counts.';
 
-create table if not exists public.marketplace_alerts (
+create table if not exists solvant.marketplace_alerts (
   id             uuid primary key default gen_random_uuid(),
-  intake_id      uuid references public.intake_submissions (id) on delete cascade,
+  intake_id      uuid references solvant.intake_submissions (id) on delete cascade,
   platform       text not null,
   received_at    timestamptz not null default now(),
   projects_found integer not null default 0,
   unrecognised   boolean not null default false
 );
 
-create table if not exists public.duplicate_links (
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
-  duplicate_of   uuid not null references public.opportunities (id) on delete cascade,
+create table if not exists solvant.duplicate_links (
+  opportunity_id uuid not null references solvant.opportunities (id) on delete cascade,
+  duplicate_of   uuid not null references solvant.opportunities (id) on delete cascade,
   reason         text not null check (reason in ('same_url', 'same_content', 'similar_title', 'manual')),
   score          real,
   created_at     timestamptz not null default now(),
@@ -287,18 +305,18 @@ create table if not exists public.duplicate_links (
 );
 
 -- ----------------------------------------------------------------------------- sales
-create table if not exists public.notes (
+create table if not exists solvant.notes (
   id             uuid primary key default gen_random_uuid(),
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
+  opportunity_id uuid not null references solvant.opportunities (id) on delete cascade,
   author_id      uuid references auth.users (id) on delete set null default auth.uid(),
   body           text not null check (char_length(body) between 1 and 5000),
   created_at     timestamptz not null default now()
 );
-create index if not exists notes_opp_idx on public.notes (opportunity_id, created_at desc);
+create index if not exists notes_opp_idx on solvant.notes (opportunity_id, created_at desc);
 
-create table if not exists public.activities (
+create table if not exists solvant.activities (
   id             uuid primary key default gen_random_uuid(),
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
+  opportunity_id uuid not null references solvant.opportunities (id) on delete cascade,
   kind           text not null check (kind in ('stage_change', 'assignment', 'classification_change', 'verification', 'contact',
                    'reply', 'meeting', 'proposal', 'note', 'follow_up', 'won', 'lost', 'created', 'ingested', 'other')),
   summary        text check (char_length(summary) <= 500),
@@ -306,11 +324,11 @@ create table if not exists public.activities (
   actor_id       uuid references auth.users (id) on delete set null default auth.uid(),
   occurred_at    timestamptz not null default now()
 );
-create index if not exists activities_opp_idx on public.activities (opportunity_id, occurred_at desc);
+create index if not exists activities_opp_idx on solvant.activities (opportunity_id, occurred_at desc);
 
-create table if not exists public.follow_ups (
+create table if not exists solvant.follow_ups (
   id             uuid primary key default gen_random_uuid(),
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
+  opportunity_id uuid not null references solvant.opportunities (id) on delete cascade,
   title          text not null check (char_length(title) between 1 and 200),
   due_at         timestamptz not null,
   assignee_id    uuid references auth.users (id) on delete set null,
@@ -318,11 +336,11 @@ create table if not exists public.follow_ups (
   created_by     uuid references auth.users (id) on delete set null default auth.uid(),
   created_at     timestamptz not null default now()
 );
-create index if not exists follow_ups_due_idx on public.follow_ups (due_at) where done_at is null;
+create index if not exists follow_ups_due_idx on solvant.follow_ups (due_at) where done_at is null;
 
-create table if not exists public.proposals (
+create table if not exists solvant.proposals (
   id             uuid primary key default gen_random_uuid(),
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
+  opportunity_id uuid not null references solvant.opportunities (id) on delete cascade,
   title          text not null check (char_length(title) between 1 and 200),
   amount         numeric(12, 2) check (amount is null or amount >= 0),
   currency       text check (currency is null or currency ~ '^[A-Z]{3}$'),
@@ -334,10 +352,10 @@ create table if not exists public.proposals (
   created_at     timestamptz not null default now()
 );
 
-create table if not exists public.acquisition_costs (
+create table if not exists solvant.acquisition_costs (
   id             uuid primary key default gen_random_uuid(),
-  source_key     text references public.sources (key) on delete set null,
-  opportunity_id uuid references public.opportunities (id) on delete set null,
+  source_key     text references solvant.sources (key) on delete set null,
+  opportunity_id uuid references solvant.opportunities (id) on delete set null,
   amount         numeric(10, 2) not null check (amount >= 0),
   currency       text not null default 'GBP' check (currency ~ '^[A-Z]{3}$'),
   incurred_on    date not null default current_date,
@@ -349,7 +367,7 @@ create table if not exists public.acquisition_costs (
 );
 
 -- ----------------------------------------------------------------------------- searches, notifications, audit, tokens
-create table if not exists public.saved_searches (
+create table if not exists solvant.saved_searches (
   id           uuid primary key default gen_random_uuid(),
   user_id      uuid not null references auth.users (id) on delete cascade default auth.uid(),
   name         text not null check (char_length(name) between 1 and 80),
@@ -359,7 +377,7 @@ create table if not exists public.saved_searches (
   created_at   timestamptz not null default now()
 );
 
-create table if not exists public.notifications (
+create table if not exists solvant.notifications (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references auth.users (id) on delete cascade,
   kind       text not null check (kind in ('follow_up_due', 'saved_search_match', 'source_failing', 'intake_result', 'system')),
@@ -371,9 +389,9 @@ create table if not exists public.notifications (
   read_at    timestamptz,
   emailed_at timestamptz
 );
-create unique index if not exists notifications_dedupe_uq on public.notifications (user_id, dedupe_key) where dedupe_key is not null;
+create unique index if not exists notifications_dedupe_uq on solvant.notifications (user_id, dedupe_key) where dedupe_key is not null;
 
-create table if not exists public.audit_log (
+create table if not exists solvant.audit_log (
   id         bigint generated always as identity primary key,
   actor_id   uuid,
   action     text not null,
@@ -382,9 +400,9 @@ create table if not exists public.audit_log (
   changes    jsonb,
   at         timestamptz not null default now()
 );
-create index if not exists audit_log_record_idx on public.audit_log (table_name, record_id, at desc);
+create index if not exists audit_log_record_idx on solvant.audit_log (table_name, record_id, at desc);
 
-create table if not exists public.ingest_tokens (
+create table if not exists solvant.ingest_tokens (
   id           uuid primary key default gen_random_uuid(),
   name         text not null check (char_length(name) between 2 and 60),
   token_hash   text not null unique,
@@ -394,4 +412,6 @@ create table if not exists public.ingest_tokens (
   last_used_at timestamptz,
   revoked_at   timestamptz
 );
-comment on table public.ingest_tokens is 'Hashes of machine ingest tokens (GitHub Actions discovery, inbound e-mail webhook). Plaintext is shown once and never stored.';
+comment on table solvant.ingest_tokens is 'Hashes of machine ingest tokens (GitHub Actions discovery, inbound e-mail webhook). Plaintext is shown once and never stored.';
+
+insert into solvant.schema_migrations (version) values ('20261111000001') on conflict do nothing;

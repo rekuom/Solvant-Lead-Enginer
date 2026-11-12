@@ -50,6 +50,8 @@ def classify_rows(rows: list[dict], origin: str, verified_by: Optional[str] = No
                 rec.meta["acquisition_cost"] = float(str(row["acquisition_cost"]).replace("£", "").replace("$", "").replace(",", ""))
             except ValueError:
                 pass
+        if str(row.get("licence_allows_export", "")).strip().lower() in ("yes", "true", "1"):
+            rec.meta["licence_allows_export"] = True       # explicit per-record licence term supplied with a purchased lead
         opp = build(rec, assess(rec, now=now))
         rules = registry.marketplace_rules(rec.source_key) or {}
         note = "user-authorised alert / user capture; platform rules apply" if rules else None

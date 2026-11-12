@@ -84,6 +84,12 @@ def discover(sources: list[str], since_days: int, max_requests: int, dry_run: bo
                 got, log = gh.search_discussions(qs, os.environ.get("GITHUB_TOKEN"), max_requests=min(5, max_requests), dry_run=dry_run)
                 records += got
                 logs.append(log.to_dict())
+        elif src == "github_discussions":
+            import os
+            qs = querylib.plan("github", since, max_queries=max_queries)
+            got, log = gh.search_discussions(qs, os.environ.get("GITHUB_TOKEN"), max_requests=min(5, max_requests), dry_run=dry_run)
+            records += got
+            logs.append(log.to_dict())
         elif src == "hn_algolia":
             if dry_run:
                 got, log = [], hn.RunLog("hn_algolia")

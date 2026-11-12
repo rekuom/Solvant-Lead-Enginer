@@ -61,7 +61,7 @@ def to_item(o: Opportunity, rights_note: Optional[str] = None) -> dict:
     neg = list(a.noise_flags) + [f"missing: {m}" for m in a.missing_facts][:12]
     meta = {k: v for k, v in (r.meta or {}).items() if k in ("kind", "query_category", "discovered_via", "verification_route", "deadline_at",
                                                               "tender_status", "cpv", "budget", "marketplace_rules", "origin", "notes",
-                                                              "verified_by", "landing_source")}
+                                                              "verified_by", "landing_source", "licence_allows_export")}
     meta["rank_explanation"] = o.rank_explanation[:10]
     meta["next_action"] = o.next_action
     if r.author_ref:

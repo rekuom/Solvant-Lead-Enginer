@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy the Python engine (poc/signal_engine) into web/api/_engine so the Vercel Python function deploys the SAME,
+"""Copy the Python engine (poc/signal_engine) into web/pyengine so the Vercel Python function deploys the SAME,
 tested code. `--check` fails if the copy is stale (run in PR checks). Stdlib only; tests and caches are not copied."""
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "poc" / "signal_engine"
-DST = ROOT / "web" / "api" / "_engine" / "signal_engine"
+DST = ROOT / "web" / "pyengine" / "signal_engine"
 SKIP = {"__pycache__"}
 
 
