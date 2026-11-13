@@ -62,17 +62,20 @@ jobs:
       - name: "1b) Classification quality gate on real, manually labelled records"
         working-directory: poc
         run: |
+          set -o pipefail
           echo "## Quality gate (real records from run 42174857442)" >> "$GITHUB_STEP_SUMMARY"
           python -m benchmark.run_real_eval --split heldout | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: "2) Source permissions (only PERMITTED collectors will run)"
         working-directory: poc
         run: |
+          set -o pipefail
           python -m signal_engine.validate permissions | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: "3) Archive forum terms pages for human permission review (no collection)"
         continue-on-error: true
         run: |
+          set -o pipefail
           mkdir -p permission-review
           for u in https://community.n8n.io/tos https://community.make.com/tos \
                    https://community.n8n.io/robots.txt https://community.make.com/robots.txt; do

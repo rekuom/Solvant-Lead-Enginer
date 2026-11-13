@@ -41,6 +41,47 @@ def _on_block(text: str) -> str:
     return m.group(1) if m else ""
 
 
+PIPE = re.compile(r"(?<![|])\|(?![|])")
+PIPEFAIL = re.compile(r"set -[a-z]*o pipefail|set -o pipefail")
+
+
+def run_blocks(text: str) -> list[tuple[str, str]]:
+    """(step name, run script) for every step. Handles `run: |` blocks and single-line `run:` values."""
+    out = []
+    lines = text.splitlines()
+    name = "?"
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        m = re.match(r"^\s*-?\s*name:\s*(.+)$", ln)
+        if m:
+            name = m.group(1).strip()
+        m = re.match(r"^(\s*)-?\s*run:\s*(.*)$", ln)
+        if m:
+            indent, rest = len(m.group(1)), m.group(2).strip()
+            if rest in ("|", "|-", ">", ">-"):
+                body = []
+                i += 1
+                while i < len(lines) and (not lines[i].strip() or len(lines[i]) - len(lines[i].lstrip()) > indent):
+                    body.append(lines[i])
+                    i += 1
+                out.append((name, "\n".join(body)))
+                continue
+            out.append((name, rest.strip("'\"")))
+        i += 1
+    return out
+
+
+def check_pipefail(text: str, n: str) -> list[str]:
+    """A pipeline's exit status is the LAST command's unless pipefail is on: `cmd | tee` would hide a failing cmd."""
+    errs = []
+    for name, body in run_blocks(text):
+        code = re.sub(r"<<'?(\w+)'?.*?^\s*\1\s*$", "", body, flags=re.S | re.M)   # ignore heredoc bodies
+        if PIPE.search(code) and not PIPEFAIL.search(body):
+            errs.append(f"{n}: step '{name}' pipes output without 'set -o pipefail' (a failing command would be hidden)")
+    return errs
+
+
 def check_workflows() -> list[str]:
     errs: list[str] = []
     files = sorted(WF.glob("*.yml")) + sorted(WF.glob("*.yaml"))
@@ -59,6 +100,7 @@ def check_workflows() -> list[str]:
                 brave_lines = [l.strip() for l in t.splitlines() if l.strip().startswith("BRAVE:")]
                 if not brave_lines or not all(l.startswith("BRAVE: ${{ github.event_name == 'workflow_dispatch' &&") for l in brave_lines):
                     errs.append(f"{n}: Brave must be impossible on scheduled runs")
+        errs += check_pipefail(t, n)
         if "pull_request_target" in t:
             errs.append(f"{n}: pull_request_target not allowed")
         if not re.search(r"^permissions:\s*\n\s+contents:\s*read\s*$", t, re.M):
