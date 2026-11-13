@@ -87,6 +87,7 @@ jobs:
           IN_BMAX: ${{ inputs.brave_max_requests || '100' }}
           IN_BFRESH: ${{ inputs.brave_freshness || 'pm' }}
         run: |
+          set -o pipefail
           [[ "$IN_SOURCES" =~ ^[a-z_:,]+$ ]] || { echo "invalid sources"; exit 1; }
           [[ -z "$IN_ALLOW" || "$IN_ALLOW" =~ ^[a-z_,]+$ ]] || { echo "invalid allow_restricted"; exit 1; }
           [[ "$IN_DAYS" =~ ^[0-9]+$ && "$IN_DAYS" -ge 1 && "$IN_DAYS" -le 90 ]] || { echo "since_days 1-90"; exit 1; }
@@ -106,6 +107,7 @@ jobs:
           BRAVE_SEARCH_API_KEY_PRESENT: ${{ secrets.BRAVE_SEARCH_API_KEY != '' && 'yes' || '' }}
           MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
         run: |
+          set -o pipefail
           python -m signal_engine.discovery.platform.plan --mode "$MODE" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve what runs

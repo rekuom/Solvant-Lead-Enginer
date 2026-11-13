@@ -32,9 +32,10 @@ jobs:
 
       - name: Runner context (no secrets)
         run: |
+          set -o pipefail
           echo "runner os: ${RUNNER_OS}  arch: ${RUNNER_ARCH}"
           python --version
-          curl --version | head -1
+          curl --version | sed -n 1p   # sed reads all input: no SIGPIPE under pipefail
           echo "commit: ${GITHUB_SHA}"
 
       - name: "1) DNS + HTTPS reachability (curl, one GET per URL)"

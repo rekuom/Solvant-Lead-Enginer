@@ -56,7 +56,9 @@ jobs:
 
       - name: Procurement classifier on the frozen real-record dev split (report only; no tuning)
         working-directory: poc
-        run: python -m benchmark.run_real_eval --split dev | tail -n 25
+        run: |
+          set -o pipefail
+          python -m benchmark.run_real_eval --split dev | tail -n 25
 
   database:
     name: database migrations + RLS security tests (local Postgres, no network)
@@ -156,6 +158,7 @@ jobs:
           PRIVACY: ${{ steps.privacy.outcome }}
           UPLOAD: ${{ steps.upload.outcome }}
         run: |
+          set -o pipefail
           echo "scenario=$SCENARIO report=$REPORT privacy=$PRIVACY publish=$UPLOAD" | tee -a "$GITHUB_STEP_SUMMARY"
           case "$SCENARIO" in
             privacy_gate_fails|files_missing) [ "$PRIVACY" = failure ] && [ "$UPLOAD" = skipped ] ;;
