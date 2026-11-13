@@ -104,6 +104,16 @@ def read_csv(path: Path) -> list[dict]:
         return [dict(r) for r in csv.DictReader(fh)]
 
 
+def read_csv_text(text: str, max_rows: int = 1000) -> list[dict]:
+    import io
+    rows = []
+    for i, r in enumerate(csv.DictReader(io.StringIO(text))):
+        if i >= max_rows:
+            break
+        rows.append({(k or "").strip().lower().replace(" ", "_"): (v or "").strip() for k, v in r.items()})
+    return rows
+
+
 def read_json(path: Path) -> list[dict]:
     data = json.loads(Path(path).read_text())
     return data if isinstance(data, list) else data.get("records", [])
@@ -111,7 +121,12 @@ def read_json(path: Path) -> list[dict]:
 
 def read_email(path: Path, source_key: Optional[str] = None) -> list[dict]:
     """Parse a user-forwarded alert e-mail into rows (one per recognised project link)."""
-    msg = email.message_from_bytes(Path(path).read_bytes(), policy=email_policy.default)
+    return read_email_bytes(Path(path).read_bytes(), source_key)
+
+
+def read_email_bytes(data: bytes, source_key: Optional[str] = None) -> list[dict]:
+    """Same as read_email, for uploaded/forwarded raw RFC 822 bytes (web intake, inbound webhook)."""
+    msg = email.message_from_bytes(data, policy=email_policy.default)
     body = msg.get_body(preferencelist=("plain", "html"))
     text = body.get_content() if body else ""
     if body is not None and body.get_content_type() == "text/html":
