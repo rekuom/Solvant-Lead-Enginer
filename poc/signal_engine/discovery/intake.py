@@ -41,10 +41,14 @@ EMAIL_LINKS = {
     "malt": re.compile(rf"https://www\.malt\.[a-z.]{{2,6}}/{_U}(?:project|mission|opportunit|offer){_U}|https://www\.malt\.[a-z.]{{2,6}}/(?:project|mission|opportunit|offer){_U}"),
     "fiverr_briefs": re.compile(rf"https://www\.fiverr\.com/{_U}brief{_U}|https://www\.fiverr\.com/briefs{_U}"),
     "bark": re.compile(rf"https://www\.bark\.com/{_U}"),
+    # European project boards (alert e-mails the owner subscribes to)
+    "eu_freelance_boards": re.compile(rf"https://www\.freelancermap\.(?:de|at|ch)/(?:projekt|project){_U}|https://www\.codeur\.com/projects/{_U}|"
+                                      rf"https://www\.freelance\.de/(?:projekte|Projekte)/{_U}|https://www\.gulp\.de/{_U}projekt{_U}"),
 }
 # Sender / link domains per platform: used when an alert's link format is not recognised.
 PLATFORM_DOMAINS = {"upwork": "upwork.com", "freelancer_com": "freelancer.", "peopleperhour": "peopleperhour.com", "malt": "malt.",
-                    "fiverr_briefs": "fiverr.com", "bark": "bark.com"}
+                    "fiverr_briefs": "fiverr.com", "bark": "bark.com",
+                    "eu_freelance_boards": "freelancermap."}
 
 
 class IntakeError(ValueError):

@@ -100,6 +100,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
+      - name: E-mail alert forwarder (Cloudflare Worker) unit tests
+        run: node --test ../integrations/email-alert-forwarder/worker.test.mjs
       - run: npm run build
 
   # Deliberate-failure test of the discovery workflow's fail-closed publication rule, evaluated by GitHub Actions itself.
