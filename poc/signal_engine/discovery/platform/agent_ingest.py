@@ -156,8 +156,11 @@ def process(cands: list[dict], now: Optional[datetime] = None) -> tuple[list[dic
         except (TypeError, ValueError):
             pass
         biz_type = (c.get("business") or {}).get("type")
-        if it["priority"] == "A" and (rec.verification == "search_snippet_only" or biz_type in ("mid_market", "enterprise")):
-            it["priority"] = "B"          # unverified snippet or larger organisation: never top priority
+        if it["pipeline"] != "EXCLUDED":
+            # priority follows the blended score; unverified snippets and larger organisations are never top priority
+            it["priority"] = "A" if it["rank_score"] >= 70 else "B" if it["rank_score"] >= 45 else "C"
+            if it["priority"] == "A" and (rec.verification == "search_snippet_only" or biz_type in ("mid_market", "enterprise")):
+                it["priority"] = "B"
         it["org_type"] = biz_type or it.get("org_type")
         it["engine_version"] = ENGINE
         it["engine"] = "llm"
