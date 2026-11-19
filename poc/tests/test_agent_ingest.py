@@ -103,3 +103,12 @@ class AgentGate(unittest.TestCase):
         out = buf.getvalue()
         self.assertIn('"accepted": 1', out)
         self.assertNotIn("Shopify", out)                    # no lead content in logs
+
+
+class PriorityFromScore(unittest.TestCase):
+    def test_tiny_jobs_and_vague_requests_are_not_priority_a(self):
+        items, _ = ai.process([cand(budget="$25", qualification={"intent": "explicit_hire_request", "relevance": "relevant", "score": 20,
+                                                                  "reason": "very small quick fix"})])
+        self.assertNotEqual(items[0]["priority"], "A")
+        items, _ = ai.process([cand(qualification={"intent": "explicit_hire_request", "relevance": "relevant", "score": 95, "reason": "clear paid scope"})])
+        self.assertEqual(items[0]["priority"], "A")
