@@ -6,6 +6,8 @@ insert into auth.users values
   ('00000000-0000-0000-0000-00000000000b', 'viewer@example.invalid'),
   ('00000000-0000-0000-0000-0000000000ff', 'stranger@example.invalid');
 
+-- tender collectors are off by default since 20261119000005; the failing-source scenario below uses TED explicitly
+update solvant.sources set enabled = true where key = 'ted';
 create temp table t_codes (k text primary key, v text);
 grant all on t_codes to authenticated, anon;
 insert into t_codes select 'boot', solvant.create_bootstrap_code();
@@ -82,10 +84,29 @@ select pg_temp.check((r ->> 'updated')::int = 1 and (r ->> 'duplicates')::int = 
 select pg_temp.expect_error($q$select solvant.ingest_records((select v from t_codes where k = 'mail'), '{"scope":"discovery"}', '[]')$q$, 'token scope enforced');
 reset role;
 
+-- 4b. agent discovery mode: token via header, search-discovered manual-only platforms accepted, prohibited rejected
+select set_config('request.headers', json_build_object('x-signal-token', (select v from t_codes where k = 'ingest'))::text, false);
+set role anon;
+select pg_temp.check((r ->> 'added')::int = 2 and (r ->> 'rejected')::int = 2, 'agent mode: header token, 2 added, 2 rejected')
+  from (select solvant.ingest_records(null, '{"scope":"discovery","mode":"agent","logs":[{"source_key":"linkedin","status":"ok","records":2}]}',
+    '[{"source_key":"linkedin","url":"https://www.linkedin.com/posts/founder-ai-dev-1","title":"Can anyone recommend an AI developer?","verification":"search_snippet_only","pipeline":"A_DIRECT_SME","priority":"B","engine":"llm","engine_version":"claude-agent+rules"},
+      {"source_key":"make_community","url":"https://community.make.com/t/looking-for-make-dev/1","title":"Looking for a Make.com developer","verification":"agent_reviewed","pipeline":"A_DIRECT_SME","priority":"A","engine":"llm"},
+      {"source_key":"ai_shared_conversations","url":"https://chatgpt.com/share/x","verification":"search_snippet_only","pipeline":"A_DIRECT_SME"},
+      {"source_key":"linkedin","url":"https://www.linkedin.com/posts/x2","verification":"fixture","pipeline":"A_DIRECT_SME"}]') r) t;
+reset role;
+select set_config('request.headers', '', false);
+select pg_temp.check((select engine from solvant.classifications c join solvant.opportunities o on o.id = c.opportunity_id
+   where o.url = 'https://community.make.com/t/looking-for-make-dev/1') = 'llm', 'agent qualification stored as engine llm');
+select pg_temp.check((select origin from solvant.discovery_runs where source_key = 'linkedin' order by started_at desc limit 1) = 'scheduler', 'agent runs logged as scheduler');
+set role anon;
+select pg_temp.expect_error($q$select solvant.ingest_records(null, '{"scope":"discovery","mode":"agent"}', '[]')$q$, 'no header and no argument: rejected');
+reset role;
+select pg_temp.check(not (select enabled from solvant.sources where key = 'find_a_tender'), 'tender collectors switched off');
+
 -- 5. viewer / editor permissions ------------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
-select pg_temp.check((select count(*) from solvant.opportunities) = 3, 'viewer reads opportunities');
-select pg_temp.check((select (solvant.dashboard_counts() ->> 'all')::int) = 3, 'dashboard counts for members');
+select pg_temp.check((select count(*) from solvant.opportunities) = 5, 'viewer reads opportunities');
+select pg_temp.check((select (solvant.dashboard_counts() ->> 'all')::int) = 5, 'dashboard counts for members');
 update solvant.opportunities set stage = 'contacted' where url = 'https://github.com/a/b/issues/1';
 select pg_temp.check((select stage from solvant.opportunities where url = 'https://github.com/a/b/issues/1') = 'needs_review', 'viewer update changes nothing (RLS)');
 select pg_temp.expect_error($q$select solvant.override_classification((select id from solvant.opportunities limit 1), 'EXCLUDED', null, '{}', 'spam')$q$, 'viewer cannot reclassify');

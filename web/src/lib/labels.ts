@@ -36,7 +36,8 @@ export const VERIFICATION: Record<string, { label: string; tone: Tone; help: str
   reviewer_verified: { label: "Verified (reviewer)", tone: "green", help: "A team member opened the original page and confirmed it" },
   user_submitted: { label: "Unverified (added by user)", tone: "amber", help: "Content as supplied; open the original URL to verify" },
   licensed_import: { label: "Licensed lead", tone: "blue", help: "From a purchased/licensed lead source; terms of the licence apply" },
-  search_snippet_only: { label: "Search snippet only", tone: "gray", help: "Not verified; never treated as a buyer" },
+  agent_reviewed: { label: "Unverified (page read by discovery agent)", tone: "amber", help: "The scheduled Claude discovery task read the original public page; open it to confirm before outreach" },
+  search_snippet_only: { label: "Unverified (search result)", tone: "gray", help: "Found in a search result; the page was not opened. Open the original to confirm before outreach" },
 };
 
 export type Tone = "green" | "amber" | "blue" | "gray" | "red" | "violet";

@@ -21,7 +21,7 @@ export type Filters = {
 export const PAGE_SIZE = 25;
 const PIPE_KEYS = new Set<string>(PIPELINES.map((p) => p.key));
 const STAGE_KEYS = new Set<string>(STAGES.map((s) => s.key));
-const VERIF = new Set(["api_verified", "reviewer_verified", "user_submitted", "licensed_import", "verified", "unverified"]);
+const VERIF = new Set(["api_verified", "reviewer_verified", "user_submitted", "licensed_import", "agent_reviewed", "search_snippet_only", "verified", "unverified"]);
 const SAFE = /^[\p{L}\p{N} _.\-/+&@']{1,80}$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -90,7 +90,7 @@ export function applyFilters<T extends QB>(qb: T, f: Filters, userId?: string): 
   if (f.country) q = q.ilike("country", f.country.replace(/[%_]/g, ""));
   if (f.tech) q = q.contains("technologies", [f.tech]);
   if (f.verification === "verified") q = q.in("verification", ["api_verified", "reviewer_verified"]);
-  else if (f.verification === "unverified") q = q.in("verification", ["user_submitted", "licensed_import", "search_snippet_only"]);
+  else if (f.verification === "unverified") q = q.in("verification", ["user_submitted", "licensed_import", "agent_reviewed", "search_snippet_only"]);
   else if (f.verification) q = q.eq("verification", f.verification);
   if (f.stage) q = STAGE_GROUPS[f.stage] ? q.in("stage", STAGE_GROUPS[f.stage]) : q.eq("stage", f.stage);
   if (f.priority) q = q.eq("priority", f.priority);
