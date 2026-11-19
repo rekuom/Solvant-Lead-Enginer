@@ -423,8 +423,8 @@
     "agency_accounts": "unknown"
    },
    "evidence": [],
-   "review_date": "2026-11-06",
-   "notes": "No public API found. UK-heavy buyers. Intake via alerts/manual. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched. Alert emails the owner receives can be forwarded to /api/engine/inbound-email (integrations/email-alert-forwarder)."
+   "review_date": "2026-11-19",
+   "notes": "UK-heavy buyers. Public job lists (technology, AI). Public listing pages read by platform/boards_reader.py at low volume (a few page requests per run, identifying User-Agent, delay), within robots.txt; listings are re-read before saving and closed/removed ones are flagged or rejected. No login, no API key. Alert e-mails can also be forwarded to /api/engine/inbound-email. Proposals happen in-platform, by a human."
   },
   {
    "key": "malt",
@@ -859,7 +859,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "Several run official 'experts/partners' directories (inbound). Not built. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
+   "notes": "Several run official 'experts/partners' directories (inbound). Not built. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched. Airtable community Jobs Board read via boards_reader (topic list embedded in the public page; robots.txt permits)."
   },
   {
    "key": "uk_business_forums",
@@ -1119,7 +1119,7 @@
   },
   {
    "key": "eu_freelance_boards",
-   "name": "European freelance project boards (freelancermap, freelance.de, GULP, twago, Codeur, Malt FR/DE/ES/NL)",
+   "name": "European freelance project boards (freelancermap, Codeur; search-only: freelance.de, GULP, twago, Malt, Workana, freelance.nl)",
    "family": "freelance_marketplace",
    "status": "manual_only",
    "collection": "search",
@@ -1142,7 +1142,7 @@
    },
    "evidence": [],
    "review_date": "2026-11-19",
-   "notes": "Regional project boards used by DACH/FR/Benelux businesses. No public API used. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+   "notes": "Regional project boards used by DACH/FR/Benelux/ES businesses. freelancermap.de (end-customer projects only; recruiter postings kept as staffing signals) and codeur.com (open projects). Public listing pages read by platform/boards_reader.py at low volume (a few page requests per run, identifying User-Agent, delay), within robots.txt; listings are re-read before saving and closed/removed ones are flagged or rejected. No login, no API key. freelance.nl disallows generic crawlers in robots.txt, so it is search-only; others search-only. Proposals happen in-platform, by a human."
   },
   {
    "key": "accounting_communities",

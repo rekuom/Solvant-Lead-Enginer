@@ -113,10 +113,18 @@ select set_config('request.headers', json_build_object('x-signal-token', (select
 set role anon;
 select pg_temp.check((solvant.discovery_feedback() -> 'by_source') @> '[{"key":"make_community"}]'::jsonb, 'feedback: per-source counts via header token');
 select pg_temp.check(position('linkedin.com/posts' in solvant.discovery_feedback()::text) = 0, 'feedback contains no lead content');
+select pg_temp.check((solvant.log_searches('', '[{"strategy":"biz-accounting","query":"can anyone recommend automation","lang":"en","kept":2},
+                                               {"strategy":"de","query":"suche Freelancer Automatisierung","lang":"de","kept":0},
+                                               {"strategy":"","query":"ignored"}]'::jsonb) ->> 'logged')::int = 2, 'search log: valid entries logged');
+select solvant.log_searches('', '[{"strategy":"de","query":"Suche Freelancer Automatisierung","kept":1}]'::jsonb);
+select pg_temp.check((solvant.discovery_feedback() -> 'by_strategy_searches') @> '[{"key":"de","searches":2,"kept":1}]'::jsonb,
+                     'feedback: searches per strategy (same query counted twice, case-insensitive)');
 reset role;
+select pg_temp.check((select count(*) from solvant.search_queries where provider = 'claude_websearch') = 2, 'search log: one row per strategy+query');
 select set_config('request.headers', '', false);
 set role anon;
 select pg_temp.expect_error('select solvant.discovery_feedback()', 'feedback needs a valid token');
+select pg_temp.expect_error($q$select solvant.log_searches('', '[{"strategy":"x","query":"y"}]')$q$, 'search log needs a valid token');
 reset role;
 
 -- 5. viewer / editor permissions ------------------------------------------------------------------------
