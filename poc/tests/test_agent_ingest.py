@@ -112,3 +112,54 @@ class PriorityFromScore(unittest.TestCase):
         self.assertNotEqual(items[0]["priority"], "A")
         items, _ = ai.process([cand(qualification={"intent": "explicit_hire_request", "relevance": "relevant", "score": 95, "reason": "clear paid scope"})])
         self.assertEqual(items[0]["priority"], "A")
+
+
+class AutoVerificationAndPriority(unittest.TestCase):
+    def test_forum_lead_verified_against_source_api(self):
+        rec = ai.to_record(cand())
+        out = ai.verify_source(rec, fetch=lambda u: {"title": "Looking for a Make.com developer (source title)",
+                                                      "created": "2026-11-16", "closed": True, "text": "Source text from the forum API"})
+        self.assertEqual((out.verification, out.title, out.created_at), ("api_verified", "Looking for a Make.com developer (source title)", "2026-11-16"))
+        self.assertIn("Discourse topic API", out.meta["verification_route"])
+
+    def test_verification_failure_keeps_lead_unverified(self):
+        def boom(u):
+            raise TimeoutError("slow")
+        out = ai.verify_source(ai.to_record(cand()), fetch=boom)
+        self.assertEqual(out.verification, "agent_reviewed")
+        self.assertEqual(out.meta["verification_error"], "TimeoutError")
+
+    def test_removed_post_rejected(self):
+        class E(Exception):
+            code = 404
+        def gone(u):
+            raise E()
+        with self.assertRaises(ai.Rejected):
+            ai.verify_source(ai.to_record(cand()), fetch=gone)
+
+    def test_freshness_caps_priority(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 11, 19, tzinfo=timezone.utc)
+        fresh, _ = ai.process([cand(published_at="2026-11-17")], now=now)
+        week2, _ = ai.process([cand(published_at="2026-11-05")], now=now)
+        old, _ = ai.process([cand(published_at="2026-10-01")], now=now)
+        self.assertEqual(fresh[0]["priority"], "A")
+        self.assertEqual(week2[0]["priority"], "B")
+        self.assertEqual(old[0]["priority"], "C")
+
+    def test_europe_and_uae_rank_higher(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 11, 19, tzinfo=timezone.utc)
+        uae, _ = ai.process([cand(published_at="2026-11-17", business={"type": "independent_sme", "country": "Dubai, UAE"})], now=now)
+        unk, _ = ai.process([cand(published_at="2026-11-17", business={"type": "independent_sme", "country": None})], now=now)
+        self.assertGreater(uae[0]["rank_score"], unk[0]["rank_score"])
+        self.assertEqual(uae[0]["meta"]["region_priority"], "target market")
+
+    def test_employment_is_separated_from_customers(self):
+        from datetime import datetime, timezone
+        items, _ = ai.process([cand(published_at="2026-11-17", kind="employment",
+                                    title="[HIRING] Full-time automation engineer | salary $90k",
+                                    evidence_quote="Full-time role on our team, salary and benefits, n8n and HubSpot automations.",
+                                    qualification={"intent": "employment_or_staffing", "relevance": "relevant", "score": 60, "reason": "salaried role"})],
+                              now=datetime(2026, 11, 19, tzinfo=timezone.utc))
+        self.assertEqual(items[0]["pipeline"], "F_RECRUITMENT_SIGNAL")

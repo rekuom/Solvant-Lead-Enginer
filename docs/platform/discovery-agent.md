@@ -39,64 +39,68 @@ Volume limits per run: about 30 searches and 25 page reads. Never bypass a login
 
 ## Procedure
 
-1. `cd` into the repository and run `git pull --ff-only`.
-2. **Main feed, fresh hiring posts.** From `poc/`, run `python -m signal_engine.discovery.platform.forum_reader latest --days 2`. It reads the public hiring categories of the Make and n8n communities, one request per forum, and already drops "for hire", full-time salaried, commission-only, internship and volunteer posts. Then run `python -m signal_engine.discovery.platform.forum_reader thread <urls…>` for the remaining topics, at most 25.
-3. **Breadth.** Run the searches below with the `WebSearch` tool (`mode: standard`). Use `allowed_domains` to focus a query on one platform group. Vary the phrasing day to day, prefer recent results, and skip URLs you've already reported. **Reddit and Threads block Anthropic's search crawler.** Don't include them in `allowed_domains` and don't work around the block.
-4. For each promising search result:
-   - forum, community or GitHub thread: read it with `WebFetch`;
-   - social or marketplace page: use only the search-result text;
+Set this once for the commands below: `export SUPABASE_URL=https://dfnaevcsergsphiiodtm.supabase.co SUPABASE_PUBLISHABLE_KEY=sb_publishable_y4MeQOuV_ZyEppl39oRVVw_wK_fW8Pf`. Run the commands from `poc/`.
+
+1. Run `git pull --ff-only`.
+2. **Learn from results.** Run `python -m signal_engine.discovery.platform.feedback`. Then adjust today's searches:
+   - repeat and vary queries and sources with `qualified > 0`, especially where `progressed_by_human` or `won` is above zero;
+   - drop queries with `total ≥ 5` and `qualified = 0`;
+   - treat `corrected_by_human` as a warning that you're mis-qualifying a pattern.
+3. **Main feed: hiring posts from the last 7 days.** Run `python -m signal_engine.discovery.platform.forum_reader latest --days 7`. It covers the hiring sections of Make, n8n, Bubble, WeWeb, Activepieces and Latenode, and already drops sellers, unpaid, commission-only and internship posts. Each topic has a `kind`: `project_or_partner` or `employment`. Read the remaining topics with `forum_reader thread <urls…>` (at most 25).
+4. **Breadth: about 20 searches** using the `WebSearch` tool (`mode: standard`), spread across the groups in the search set below. Prefer results from the last 7 days and skip undated marketplace results. **Never search Reddit or Threads**: they block Anthropic's crawler, and the block must not be worked around.
+5. For each promising search result:
+   - forum or GitHub thread: read it;
+   - social or marketplace page: use only the result text;
    - discard anything matching the exclusions.
-5. Qualify every remaining candidate, from the forum feed and from search:
-   - **intent**: `explicit_hire_request` | `recommendation_request` | `quote_request` | `partner_search` | `problem_only` | `seller_offer` | `job_seeker` | `none_or_discussion`
-   - **relevance**: `relevant` | `uncertain` | `not_relevant`. Relevant means AI, automation, integrations, chatbots, CRM, data extraction, MVP or custom software.
-   - **business.type**: `independent_sme` | `startup` | `solo_founder` | `small_agency` | `mid_market` | `enterprise` | `public_sector` | `unknown`
-   - **score** from 0 to 100: urgency, budget stated, clarity of scope, small-business fit, recency.
-   - **reason**: one sentence based on the post itself.
+6. Qualify each candidate. Add `"kind"` to every candidate:
+   - `customer`: a business wants work done for itself;
+   - `partner`: an agency or platform wants a delivery partner;
+   - `employment`: a salaried or staff role. These are kept, but in a separate pipeline.
 
-   Never invent budgets, company names, size or contact details. Use `unknown` when the post doesn't say.
-6. Write `poc/out/agent/candidates-YYYYMMDD.json`. The folder is git-ignored; **never commit it**. The file is a JSON list of objects like this:
-   ```json
-   {"url": "https://…", "title": "…", "evidence_quote": "exact words showing the need (≤ 600 chars)",
-    "published_at": "2026-11-18" , "page_read": true, "query": "the search used",
-    "business": {"name": null, "type": "independent_sme", "size": "4 staff", "country": "UK", "industry": "accounting"},
-    "budget": null,
-    "qualification": {"intent": "explicit_hire_request", "relevance": "relevant", "score": 82,
-                      "reason": "…", "decision_maker": "founder", "service": "n8n workflow automation"}}
-   ```
-7. From `poc/`, run `SUPABASE_URL=https://dfnaevcsergsphiiodtm.supabase.co SUPABASE_PUBLISHABLE_KEY=sb_publishable_y4MeQOuV_ZyEppl39oRVVw_wK_fW8Pf python -m signal_engine.discovery.platform.agent_ingest out/agent/candidates-YYYYMMDD.json --dry-run`. Check the counts, then run it again without `--dry-run`. The ingest token is injected by the session's network proxy (header `x-signal-token`). Never print or store it.
-8. Report counts only: candidates, accepted, priority A/B, rejected and why. Don't put lead details in GitHub issues, commits or logs.
+   Then fill in intent, relevance, business type, score and reason as defined above.
+   - Prefer independently owned businesses in the **UK, Europe and the UAE**. Record the country only when the post states it.
+   - Never invent details.
+7. Write `out/agent/candidates-YYYYMMDD.json`. The folder is git-ignored; never commit it.
+8. Run `python -m signal_engine.discovery.platform.agent_ingest out/agent/candidates-YYYYMMDD.json --dry-run`, check the counts, then run it again without `--dry-run`.
+   - **Automatic verification:** the ingest re-reads every forum and GitHub lead from the original publisher's official API. On success it stores the source's own title, date and text, marked "Verified (source API)". Posts that have been removed are rejected. No manual verification is needed for these.
+   - **Ranking:** the last 7 days rank first; 8–30 days old is at most priority B; older is at most C. UK, Europe and UAE leads rank higher.
+   - The ingest token is injected by the session's network proxy. Never print it.
+9. Report counts only: candidates; accepted; priority A, B and C; customer, partner and employment counts; how many were verified automatically; rejected and why; and which queries produced qualified leads.
 
-## Search set (rotate; about 30 per run)
+**Daily expectations:** quality over quota. The measured supply of explicit, fresh, public requests is a few per day. Don't fill the quota with weak signals, sellers or stale posts.
 
-**Communities** (`allowed_domains`: community.make.com, community.n8n.io, community.zapier.com):
-- "looking for" developer
-- "hiring" automation
-- "need help" paid
-- freelancer wanted
+## Search set (rotate by feedback; about 20 per run)
 
-**Small-business communities** (`allowed_domains`: indiehackers.com, ukbusinessforums.co.uk, community.shopify.com, community.hubspot.com):
-- looking for developer MVP
+**Help threads that offer payment, by forum** (`allowed_domains`: one forum per query, from community.make.com, community.n8n.io, forum.bubble.io, community.weweb.io, community.retool.com, community.latenode.com, community.activepieces.com, community.openai.com, forum.uipath.com):
+- "willing to pay"
+- "paid help"
+- "hire someone"
+- "looking for someone to"
+- "need a freelancer"
+
+**Small-business and founder forums** (`allowed_domains`: indiehackers.com, ukbusinessforums.co.uk, community.shopify.com, community.hubspot.com):
+- looking for developer
 - recommend automation
 - need someone to integrate
+- AI chatbot for my business
 
-**Social, via search** (`allowed_domains`: linkedin.com, facebook.com, instagram.com, x.com; Reddit and Threads block Anthropic's crawler):
-- "can anyone recommend" AI developer
-- "looking for someone to automate"
-- "need an n8n" OR "Make.com expert" OR "Zapier expert"
-- "build an AI chatbot for my business"
-- "need someone to build an MVP"
-- "spending hours" manual data entry help
-- "recommend a developer" small business
-
-**Marketplaces** (`allowed_domains`: upwork.com, peopleperhour.com, freelancer.com):
-- AI automation project
-- n8n
-- chatbot integration
+**Marketplaces, search result only** (`allowed_domains`: freelancer.com, peopleperhour.com, upwork.com). Keep only project or job pages, never seller listings:
+- n8n project
+- Make.com automation project
+- AI chatbot integration project
 - Zapier Xero
+- (UK) peopleperhour automation
 
 **GitHub** (`allowed_domains`: github.com):
-- "looking for a contractor" OR "paid help" automation
-- "will pay" integration
+- "looking for a contractor" automation
+- "paid" "help wanted" integration
+- "will pay" bot
+
+**Social, search result only; low yield, keep to about 3 per run** (`allowed_domains`: linkedin.com, x.com, facebook.com, instagram.com):
+- "looking for" n8n OR Make.com expert Dubai OR UAE
+- "recommend" automation agency UK small business
+- "suche" Automatisierung Freelancer
+- "recherche" freelance automatisation
 
 ## Results in the dashboard
 

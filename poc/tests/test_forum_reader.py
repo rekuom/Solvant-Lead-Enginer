@@ -15,11 +15,13 @@ class ForumReader(unittest.TestCase):
             {"id": 1, "slug": "a", "title": "Looking to Hire an n8n Expert to Build a Lead Workflow", "created_at": "2026-11-18T10:00:00Z", "posts_count": 1},
             {"id": 2, "slug": "b", "title": "[For Hire] n8n automation builder", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 3, "slug": "c", "title": "[HIRING] Full-Time CRM Engineer | $2,000/month", "created_at": "2026-11-18T10:00:00Z"},
+            {"id": 6, "slug": "f", "title": "Volunteer AI ambassadors wanted", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 4, "slug": "d", "title": "Looking for BD & Referral Partners — Commission-Based", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 5, "slug": "e", "title": "Hiring: Make.com + Airtable specialist", "created_at": "2026-10-01T10:00:00Z"},
         ]
         out = fr.filter_topics(topics, "community.n8n.io", days=3, now=NOW)
-        self.assertEqual([o["url"] for o in out], ["https://community.n8n.io/t/a/1"])
+        self.assertEqual([(o["url"], o["kind"]) for o in out],
+                         [("https://community.n8n.io/t/a/1", "project_or_partner"), ("https://community.n8n.io/t/c/3", "employment")])
 
     def test_topic_text_strips_html(self):
         d = {"title": "T", "created_at": "2026-11-17T00:00:00Z", "closed": True,
