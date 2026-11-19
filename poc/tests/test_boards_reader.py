@@ -144,6 +144,12 @@ class SearchLog(unittest.TestCase):
                                {"strategy": "", "query": "dropped"}, {"strategy": "de", "query": "x", "kept": 999}])
         self.assertEqual([(x["strategy"], x["kept"]) for x in e], [("biz-accounting", 3), ("de", 100)])
 
+    def test_forum_feed_labels_are_reader_feeds_without_search_budget(self):
+        self.assertEqual(fb.strategy_of("forum feed: n8n jobs"), "forum")
+        self.assertEqual(fb.strategy_of("forum feed n8n jobs"), "forum")
+        plan = fb.allocate(fb.rollup([{"key": "forum feed: n8n", "total": 9, "qualified": 9}]), 20)
+        self.assertNotIn("forum", plan)
+
     def test_zero_yield_searches_lower_a_strategy(self):
         s = {r["key"]: r for r in fb.rollup([{"key": "de: a", "total": 1, "qualified": 1}, {"key": "fr: b", "total": 1, "qualified": 1}],
                                             [{"key": "de", "searches": 20}, {"key": "fr", "searches": 2}])}

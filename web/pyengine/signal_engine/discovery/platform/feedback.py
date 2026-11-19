@@ -25,10 +25,10 @@ SEARCH_STRATEGIES = ["biz-ecommerce", "biz-accounting", "biz-property", "biz-hos
 
 def strategy_of(key: str) -> str:
     k = str(key or "").strip().lower()
+    if k.startswith("forum"):           # forum_reader leads ("forum feed …", "forum: …")
+        return "forum"
     if ":" in k:
         return k.split(":", 1)[0].strip() or "(none)"
-    if k.startswith("forum ") or k in ("forum", "forum_reader"):
-        return "forum"
     return "(untagged)"
 
 
