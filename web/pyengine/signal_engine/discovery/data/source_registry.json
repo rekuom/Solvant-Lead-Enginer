@@ -134,7 +134,7 @@
     "https://docs.github.com/en/rest/search/search"
    ],
    "review_date": "2026-11-06",
-   "notes": "Real calibration (2026-11-06, 12 queries): results dominated by SEO spam, AI lead-bot issues, crypto bounty farms and internal task trackers; genuine SME buyers rare. Noise detectors required."
+   "notes": "Real calibration (2026-11-06, 12 queries): results dominated by SEO spam, AI lead-bot issues, crypto bounty farms and internal task trackers; genuine SME buyers rare. Noise detectors required. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; public forum/GitHub pages may be read at low volume where robots.txt allows."
   },
   {
    "key": "github_discussions",
@@ -160,7 +160,7 @@
     "https://docs.github.com/en/graphql"
    ],
    "review_date": "2026-11-06",
-   "notes": "GraphQL requires a token; blocked in Claude Cloud; runs in Actions with GITHUB_TOKEN. Untested."
+   "notes": "GraphQL requires a token; blocked in Claude Cloud; runs in Actions with GITHUB_TOKEN. Untested. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; public forum/GitHub pages may be read at low volume where robots.txt allows."
   },
   {
    "key": "hn_algolia",
@@ -286,7 +286,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "No public API found; terms not reviewed. Manual capture only."
+   "notes": "No public API found; terms not reviewed. Manual capture only. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "bounty_platforms",
@@ -338,7 +338,7 @@
     "https://www.upwork.com/developer"
    ],
    "review_date": "2026-11-06",
-   "notes": "Official GraphQL API with marketplace job-posting search scope; requires approved API key; terms must be read. No auto-proposals. Not built: needs credentials + approval."
+   "notes": "Official GraphQL API with marketplace job-posting search scope; requires approved API key; terms must be read. No auto-proposals. Not built: needs credentials + approval. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "fiverr_briefs",
@@ -396,7 +396,7 @@
     "https://developers.freelancer.com"
    ],
    "review_date": "2026-11-06",
-   "notes": "Official API with OAuth2 and project search (per SDK docs); app registration required. Not built: needs credentials."
+   "notes": "Official API with OAuth2 and project search (per SDK docs); app registration required. Not built: needs credentials. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "peopleperhour",
@@ -423,7 +423,7 @@
    },
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "No public API found. UK-heavy buyers. Intake via alerts/manual."
+   "notes": "No public API found. UK-heavy buyers. Intake via alerts/manual. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "malt",
@@ -596,7 +596,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "No API to search others' posts; User Agreement prohibits scraping. Manual capture only."
+   "notes": "No API to search others' posts; User Agreement prohibits scraping. Manual capture only. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "facebook_groups",
@@ -619,7 +619,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "Groups API deprecated (2024). Never scrape private groups. Manual capture only."
+   "notes": "Groups API deprecated (2024). Never scrape private groups. Manual capture only. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "reddit",
@@ -644,7 +644,7 @@
     "https://redditinc.com/policies/data-api-terms"
    ],
    "review_date": "2026-11-06",
-   "notes": "Commercial use needs written approval; free tier non-commercial. Not built."
+   "notes": "Commercial use needs written approval; free tier non-commercial. Not built. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "x_twitter",
@@ -669,7 +669,7 @@
     "https://docs.x.com"
    ],
    "review_date": "2026-11-06",
-   "notes": "Pay-per-use since Feb 2026 (~$0.005/post read reported); paid. Not built."
+   "notes": "Pay-per-use since Feb 2026 (~$0.005/post read reported); paid. Not built. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "bluesky",
@@ -694,7 +694,7 @@
     "https://docs.bsky.app"
    ],
    "review_date": "2026-11-06",
-   "notes": "searchPosts requires authentication (403 anonymous, per multiple reports). Needs an app password. Not built."
+   "notes": "searchPosts requires authentication (403 anonymous, per multiple reports). Needs an app password. Not built. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "mastodon",
@@ -744,7 +744,7 @@
     "https://community.n8n.io/tos"
    ],
    "review_date": "2026-11-06",
-   "notes": "Public Discourse JSON reachable (run 42032803184); terms not reviewed; permission not obtained. Collector disabled."
+   "notes": "Public Discourse JSON reachable (run 42032803184); terms not reviewed; permission not obtained. Collector disabled. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; public forum/GitHub pages may be read at low volume where robots.txt allows."
   },
   {
    "key": "make_community",
@@ -770,7 +770,7 @@
     "https://community.make.com/tos"
    ],
    "review_date": "2026-11-06",
-   "notes": "As n8n."
+   "notes": "As n8n. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; public forum/GitHub pages may be read at low volume where robots.txt allows."
   },
   {
    "key": "zapier_community",
@@ -792,7 +792,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "Support forum; solicitation rules not verified."
+   "notes": "Support forum; solicitation rules not verified. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; public forum/GitHub pages may be read at low volume where robots.txt allows."
   },
   {
    "key": "power_platform_community",
@@ -814,7 +814,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "Support forum."
+   "notes": "Support forum. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; public forum/GitHub pages may be read at low volume where robots.txt allows."
   },
   {
    "key": "hubspot_salesforce_pipedrive_zoho_ghl",
@@ -836,7 +836,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "Support forums usually prohibit solicitation; vendor partner programmes are the legitimate route."
+   "notes": "Support forums usually prohibit solicitation; vendor partner programmes are the legitimate route. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "shopify_woo_xero_qbo_airtable_notion_bubble_webflow_stripe",
@@ -858,7 +858,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "Several run official 'experts/partners' directories (inbound). Not built."
+   "notes": "Several run official 'experts/partners' directories (inbound). Not built. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "uk_business_forums",
@@ -881,7 +881,7 @@
    "marketplace_rules": null,
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "No API; no permission. Manual capture only."
+   "notes": "No API; no permission. Manual capture only. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
   },
   {
    "key": "rss_atom",
@@ -1025,6 +1025,72 @@
    ],
    "review_date": "2026-11-06",
    "notes": "Free official API (key required) for company verification; not built yet."
+  },
+  {
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "connector": "agent_search",
+   "enabled_by_default": false,
+   "key": "instagram",
+   "name": "Instagram (public business posts)",
+   "family": "social",
+   "status": "manual_only",
+   "collection": "agent_search",
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "contact_route": "reply on the public post or the business's published contact route",
+   "notes": "No permitted automated access. Discovery only via search-engine results (the page itself is never fetched); human opens the original to verify."
+  },
+  {
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "connector": "agent_search",
+   "enabled_by_default": false,
+   "key": "threads",
+   "name": "Threads",
+   "family": "social",
+   "status": "manual_only",
+   "collection": "agent_search",
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "contact_route": "reply on the public post",
+   "notes": "Discovery only via search-engine results; the page itself is never fetched."
+  },
+  {
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "connector": null,
+   "enabled_by_default": false,
+   "key": "ai_shared_conversations",
+   "name": "Shared AI conversations (ChatGPT/Claude/Gemini share links)",
+   "family": "ai_community",
+   "status": "prohibited",
+   "collection": "none",
+   "pipelines": [],
+   "contact_route": "none",
+   "notes": "Excluded: an indexed share link cannot be reliably distinguished from an accidentally exposed private conversation and usually contains personal data. Never collected for prospecting."
   }
  ]
 }

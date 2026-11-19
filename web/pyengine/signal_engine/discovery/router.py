@@ -35,7 +35,8 @@ def route(rec: RawRecord, a: Assessment) -> tuple[str, str]:
         return "EXCLUDED", "closed/resolved at source"
     if a.freshness.value == "old":
         return "EXCLUDED", "older than 90 days"
-    if rec.verification == "search_snippet_only":
+    agent = (rec.meta or {}).get("discovered_by") == "claude_agent"
+    if rec.verification == "search_snippet_only" and not agent:
         return "H_RESEARCH_UNVERIFIED", "search snippet only: content not opened/verified"
     if rec.source_key in ("contracts_finder", "find_a_tender", "ted"):
         if rel in ("relevant",):
@@ -62,6 +63,9 @@ def route(rec: RawRecord, a: Assessment) -> tuple[str, str]:
         return "B_FREELANCE_PROJECT", f"project posted on {registry.policy(rec.source_key)['name']}"
     if intent in BUY_INTENTS:
         # A business asking for a freelancer/agency OUTSIDE a marketplace is a direct buyer (engagement type recorded separately).
+        if agent:
+            how = "seen in a search result" if rec.verification == "search_snippet_only" else "read on the original page"
+            return "A_DIRECT_SME", f"explicit request found by the discovery agent ({how}): open the original and verify before outreach"
         if rec.verification not in ("api_verified", "reviewer_verified"):
             return "A_DIRECT_SME", "explicit request (user-supplied: verify before outreach)"
         return "A_DIRECT_SME", "explicit request for external implementation help"
@@ -69,6 +73,8 @@ def route(rec: RawRecord, a: Assessment) -> tuple[str, str]:
         return "B_FREELANCE_PROJECT", "paid bounty (fiat) for a defined deliverable"
     if intent == "problem_only" and rel == "relevant":
         return "D_OPERATIONAL_PAIN", "specific operational problem, no request to hire"
+    if agent and rec.verification == "search_snippet_only":
+        return "H_RESEARCH_UNVERIFIED", "search result without an explicit request: research only"
     return "H_RESEARCH_UNVERIFIED", f"no buying intent established ({intent}); kept for research"
 
 

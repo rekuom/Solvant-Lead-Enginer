@@ -86,7 +86,8 @@ FRESH_DAYS, STALE_DAYS = 30, 90
 
 def _to_signal(rec: RawRecord) -> Signal:
     status = {"api_verified": "verified_api", "reviewer_verified": "human_verified", "user_submitted": "human_verified",
-              "licensed_import": "human_verified", "search_snippet_only": "search_index_only", "fixture": "synthetic"}[rec.verification]
+              "licensed_import": "human_verified", "agent_reviewed": "human_verified", "search_snippet_only": "search_index_only",
+              "fixture": "synthetic"}[rec.verification]
     meta = {"kind": "tender" if rec.source_key in TENDER_SOURCES else rec.meta.get("kind", "forum_post"), **rec.meta}
     return Signal(source=rec.source_key, source_id=rec.source_id, url=rec.url, title=rec.title, text=rec.body,
                   verification_status=status, posted_at=rec.created_at, organisation=rec.organisation,

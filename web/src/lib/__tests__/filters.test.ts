@@ -38,7 +38,7 @@ describe("parseFilters", () => {
     const { qb, calls } = recorder();
     applyFilters(qb, parseFilters({ stage: "awaiting_review", verification: "unverified", tech: "HubSpot", page: "2" }), "u1");
     expect(calls).toContainEqual(["in", "stage", ["discovered", "needs_review"]]);
-    expect(calls).toContainEqual(["in", "verification", ["user_submitted", "licensed_import", "search_snippet_only"]]);
+    expect(calls).toContainEqual(["in", "verification", ["user_submitted", "licensed_import", "agent_reviewed", "search_snippet_only"]]);
     expect(calls).toContainEqual(["contains", "technologies", ["HubSpot"]]);
     expect(calls).toContainEqual(["range", 25, 49]);
   });

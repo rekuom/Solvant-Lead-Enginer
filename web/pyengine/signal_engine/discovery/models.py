@@ -15,6 +15,7 @@ VERIFICATION = (
     "reviewer_verified",     # a named reviewer opened the original page and confirmed the content/date
     "user_submitted",        # manual / imported entry: content as supplied, NOT yet verified
     "licensed_import",       # purchased/licensed lead feed row: content per the licence, not independently verified
+    "agent_reviewed",        # the scheduled discovery agent read the ORIGINAL public page (not human-verified)
     "search_snippet_only",   # a search-engine result: title/snippet only
     "fixture",               # test data; never a lead
 )
