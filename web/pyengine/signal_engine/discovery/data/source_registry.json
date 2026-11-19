@@ -338,7 +338,7 @@
     "https://www.upwork.com/developer"
    ],
    "review_date": "2026-11-06",
-   "notes": "Official GraphQL API with marketplace job-posting search scope; requires approved API key; terms must be read. No auto-proposals. Not built: needs credentials + approval. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
+   "notes": "Official GraphQL API with marketplace job-posting search scope; requires approved API key; terms must be read. No auto-proposals. Not built: needs credentials + approval. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched. Alert emails the owner receives can be forwarded to /api/engine/inbound-email (integrations/email-alert-forwarder)."
   },
   {
    "key": "fiverr_briefs",
@@ -375,7 +375,7 @@
    "family": "freelance_marketplace",
    "status": "restricted",
    "collection": "api",
-   "connector": null,
+   "connector": "freelancer_api",
    "enabled_by_default": false,
    "pipelines": [
     "B"
@@ -393,10 +393,11 @@
     "agency_accounts": true
    },
    "evidence": [
-    "https://developers.freelancer.com"
+    "https://developers.freelancer.com",
+    "https://developers.freelancer.com/docs/projects/projects"
    ],
-   "review_date": "2026-11-06",
-   "notes": "Official API with OAuth2 and project search (per SDK docs); app registration required. Not built: needs credentials. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
+   "review_date": "2026-11-19",
+   "notes": "Official Freelancer API (developers.freelancer.com): /projects/active search and /projects/{id} re-check, OAuth token (Freelancer-OAuth-V1) injected by the session proxy; never stored in the repo. Built: platform/freelancer_feed.py; runs only once the owner registers an app and saves the token. Read-only: no automated bids; proposals are made by a human on Freelancer.com; no off-platform contact."
   },
   {
    "key": "peopleperhour",
@@ -423,7 +424,7 @@
    },
    "evidence": [],
    "review_date": "2026-11-06",
-   "notes": "No public API found. UK-heavy buyers. Intake via alerts/manual. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched."
+   "notes": "No public API found. UK-heavy buyers. Intake via alerts/manual. Agent discovery (2026-11-19): found via search-engine results by the scheduled Claude task; the platform page itself is never fetched. Alert emails the owner receives can be forwarded to /api/engine/inbound-email (integrations/email-alert-forwarder)."
   },
   {
    "key": "malt",
@@ -452,7 +453,7 @@
     "https://www.malt.uk/a/freelance/tech"
    ],
    "review_date": "2026-11-06",
-   "notes": "European (FR/DE/ES/NL/BE/UK). No public API found. Intake via alerts/manual."
+   "notes": "European (FR/DE/ES/NL/BE/UK). No public API found. Intake via alerts/manual. Alert emails the owner receives can be forwarded to /api/engine/inbound-email (integrations/email-alert-forwarder)."
   },
   {
    "key": "contra",
@@ -1091,6 +1092,219 @@
    "pipelines": [],
    "contact_route": "none",
    "notes": "Excluded: an indexed share link cannot be reliably distinguished from an accidentally exposed private conversation and usually contains personal data. Never collected for prospecting."
+  },
+  {
+   "key": "theirstack",
+   "name": "TheirStack Jobs API (licensed job data)",
+   "family": "job_data_provider",
+   "status": "licensed",
+   "collection": "api",
+   "connector": "theirstack_api",
+   "enabled_by_default": false,
+   "pipelines": [
+    "F"
+   ],
+   "auth": "API key",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "employer's own job advert / careers page",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [
+    "https://theirstack.com/en/docs/api-reference"
+   ],
+   "review_date": "2026-11-19",
+   "notes": "Licensed job-postings API. Free plan: 200 credits/month, 1 credit per job returned; the feed hard-caps each run (default 6 jobs). Used only for EMPLOYMENT signals from companies with <=50 staff hiring for automation/AI/admin work, flagged when a contract/part-time role suggests an outsourced project would fit. Key injected by the session proxy; never stored. Built: platform/theirstack_feed.py."
+  },
+  {
+   "key": "eu_freelance_boards",
+   "name": "European freelance project boards (freelancermap, freelance.de, GULP, twago, Codeur, Malt FR/DE/ES/NL)",
+   "family": "freelance_marketplace",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "B"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "in-platform application only",
+   "buying_intent_quality": "high",
+   "marketplace_rules": {
+    "can_submit_proposal": true,
+    "off_platform_contact": false,
+    "export_or_retain": "per platform terms",
+    "agency_accounts": "unknown"
+   },
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Regional project boards used by DACH/FR/Benelux businesses. No public API used. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "accounting_communities",
+   "name": "Accounting & bookkeeping communities (AccountingWEB, Xero Central, QuickBooks Community, Sage Community)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Practices and small businesses asking about bookkeeping automation, integrations and reporting. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "property_communities",
+   "name": "Property & landlord communities (Property118, LandlordZone, Property Tribes)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Landlords, letting and estate agents asking for software, automation and admin help. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "ecommerce_seller_communities",
+   "name": "E-commerce seller communities (Amazon Seller Forums, eBay Community, Etsy Community, WooCommerce, BigCommerce)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Independent online sellers asking for inventory, order, listing and accounting automation. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "hospitality_retail_communities",
+   "name": "Hospitality & retail merchant communities (Square Seller Community, Lightspeed, Toast, Hospitality forums)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Restaurants, cafés, hotels and shops asking about bookings, POS integrations and admin automation. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "recruitment_communities",
+   "name": "Recruitment agency communities (Bullhorn, Vincere, Recruitment Juice, RecruitCRM)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "C",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Small recruitment agencies asking for ATS/CRM automation, sourcing workflows and integrations (as buyers, not job adverts). Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "professional_services_communities",
+   "name": "Professional-services & small-business forums (UK Business Forums sections, Clio, Practice-management communities, Startups.co.uk)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Law firms, consultancies, clinics and agencies asking for workflow automation and integrations. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
+  },
+  {
+   "key": "eu_business_communities",
+   "name": "European small-business forums (DE/FR/ES/NL/IT founder and business communities)",
+   "family": "entrepreneur_community",
+   "status": "manual_only",
+   "collection": "search",
+   "connector": null,
+   "enabled_by_default": false,
+   "pipelines": [
+    "A",
+    "D"
+   ],
+   "auth": "none",
+   "cost": "free",
+   "rate_limit": "",
+   "commercial_reuse": "unknown",
+   "contact_route": "on-forum reply, per forum rules (local language)",
+   "buying_intent_quality": "medium",
+   "marketplace_rules": null,
+   "evidence": [],
+   "review_date": "2026-11-19",
+   "notes": "Multilingual discovery: local-language searches for business owners asking for automation help. Search-only: found through search-engine results by the scheduled Claude task; pages are not fetched; snippet leads are capped at priority B and verified by a human before any contact."
   }
  ]
 }

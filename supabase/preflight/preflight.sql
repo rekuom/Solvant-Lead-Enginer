@@ -5,7 +5,7 @@ begin transaction read only;
 
 with expected as (
   select array['acquisition_costs', 'activities', 'admin_bootstrap', 'app_settings', 'audit_log', 'classifications', 'companies', 'contact_channels', 'discovery_runs', 'duplicate_links', 'evidence', 'follow_ups', 'ingest_tokens', 'intake_submissions', 'marketplace_alerts', 'members', 'notes', 'notifications', 'opportunities', 'proposals', 'saved_searches', 'schema_migrations', 'search_queries', 'sources']::text[] as tables, array['_apply_retention', '_ingest_item', '_tally', 'add_member', 'audit_row', 'can_edit', 'claim_admin', 'collector_plan', 'create_bootstrap_code', 'create_ingest_token', 'dashboard_counts', 'discovery_feedback', 'enforce_retention', 'ingest_records', 'is_admin', 'is_member', 'list_members', 'log_export', 'mark_duplicate', 'my_role', 'opportunity_activity', 'override_classification', 'possible_duplicates', 'purge_expired_excerpts', 'refresh_my_notifications', 'remove_member', 'revoke_ingest_token', 'save_intake', 'setting', 'touch_updated_at', 'verify_opportunity']::text[] as funcs, array['source_performance']::text[] as views,
-         array['app_role', 'sales_stage']::text[] as types, array['20261111000001', '20261111000002', '20261111000003', '20261111000004', '20261119000005', '20261119000006', '20261119000007']::text[] as versions
+         array['app_role', 'sales_stage']::text[] as types, array['20261111000001', '20261111000002', '20261111000003', '20261111000004', '20261119000005', '20261119000006', '20261119000007', '20261119000008']::text[] as versions
 ),
 schema_state as (
   select exists (select 1 from pg_namespace where nspname = 'solvant') as present

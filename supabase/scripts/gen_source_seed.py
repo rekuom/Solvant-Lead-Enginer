@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate supabase/migrations/20261111000004_seed_sources.sql from the Python source registry (single source of truth).
+"""Generate the source-registry migration from the Python source registry (single source of truth).
+
+20261111000004_seed_sources.sql is the original (already applied) seed and stays frozen; registry changes are
+shipped by regenerating the latest refresh migration below (same idempotent upsert, new ledger version).
 
 The seed inserts sources that do not exist yet and refreshes their permission metadata; it never touches operator choices
 (enabled, schedule, budget, config) for rows that already exist. Run: python3 supabase/scripts/gen_source_seed.py [--check]
@@ -12,7 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REG = ROOT / "poc" / "signal_engine" / "discovery" / "data" / "source_registry.json"
-OUT = ROOT / "supabase" / "migrations" / "20261111000004_seed_sources.sql"
+VERSION = "20261119000008"
+OUT = ROOT / "supabase" / "migrations" / f"{VERSION}_refresh_sources.sql"
 # connectors that exist in the engine and can run in the scheduled GitHub Actions collector
 SCHEDULABLE = {"contracts_finder", "find_a_tender", "ted", "github_issues", "github_discussions", "rss_atom"}
 
@@ -68,7 +72,7 @@ def build() -> str:
             "  ('email_notifications', '{\"enabled\": false, \"provider\": null}'::jsonb),\n"
             "  ('brave', '{\"enabled\": false, \"monthly_budget_usd\": 0, \"max_requests_per_run\": 100, \"storage_rights_attested\": false}'::jsonb)\n"
             "on conflict (key) do nothing;\n\n"
-            "insert into solvant.schema_migrations (version) values ('20261111000004') on conflict do nothing;\n")
+            "insert into solvant.schema_migrations (version) values ('" + VERSION + "') on conflict do nothing;\n")
     return sql
 
 

@@ -1,0 +1,13 @@
+# Deploy:  npx wrangler deploy        (free Workers plan is sufficient)
+# Secret:  npx wrangler secret put SIGNAL_TOKEN   (paste the inbound_email token created in Solvant > Settings)
+name = "solvant-alert-forwarder"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+[vars]
+ENDPOINT = "https://solvant-lead-enginer-web-i2ae.vercel.app/api/engine/inbound-email"
+# Optional: comma-separated senders. Leave empty to accept the built-in marketplace domains only.
+# Add your own mailbox address if you forward alerts manually, e.g. "upwork.com,freelancer.com,you@example.com".
+ALLOWED_SENDERS = ""
+# Optional: a Cloudflare-verified destination address that receives the alert if the engine is unavailable.
+FALLBACK_TO = ""
