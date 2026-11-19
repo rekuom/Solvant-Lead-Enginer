@@ -100,6 +100,7 @@ def to_record(c: dict) -> RawRecord:
             published = None
     meta = {"kind": "agent_search_result", "discovered_by": "claude_agent", "discovered_via": "claude_web_search",
             "query_category": str(c.get("query") or "")[:120], "platform": key, "page_read": page_read,
+            "opportunity_kind": str(c.get("kind") or "")[:30] or None,
             "verification_route": "agent read the original public page" if page_read else "search-engine result only (page not fetched)"}
     if c.get("budget"):
         meta["budget"] = str(c["budget"])[:60]
@@ -108,6 +109,47 @@ def to_record(c: dict) -> RawRecord:
                      state="unknown", fetched_at=datetime.now(timezone.utc).isoformat(), query_id=f"agent:{meta['query_category'][:60]}",
                      organisation=(str(biz.get("name") or "").strip()[:200] or None),
                      country_hint=(str(biz.get("country") or "").strip()[:80] or None), meta=meta)
+
+
+_GH_ISSUE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/(?:issues|discussions)/(\d+)")
+TARGET_COUNTRIES = re.compile(
+    r"\b(uk|united kingdom|england|scotland|wales|ireland|uae|united arab emirates|dubai|abu dhabi|sharjah|germany|deutschland|"
+    r"france|netherlands|belgium|luxembourg|spain|portugal|italy|switzerland|austria|denmark|sweden|norway|finland|iceland|poland|"
+    r"czech|slovakia|hungary|romania|bulgaria|greece|croatia|slovenia|serbia|estonia|latvia|lithuania|malta|cyprus|europe|eu)\b", re.I)
+
+
+def verify_source(rec: RawRecord, fetch=None) -> RawRecord:
+    """Re-read the ORIGINAL post through the publisher's official API where one exists (approved Discourse forums, GitHub).
+    On success the record carries the source's own title/date/text and verification 'api_verified' — no manual click needed.
+    On failure the agent's reading is kept as 'agent_reviewed' with the failure noted; a missing/removed topic is rejected."""
+    from . import forum_reader
+    fetch = fetch or forum_reader.fetch_topic
+    host = (urlsplit(rec.url).hostname or "").lower()
+    try:
+        if host in forum_reader.FORUM_HOSTS:
+            t = fetch(rec.url)
+            if t and t.get("title"):
+                rec.title, rec.body = clean_text(t["title"], limit=300), clean_text(t.get("text") or rec.body, limit=800)
+                rec.created_at = t.get("created") or rec.created_at
+                rec.verification = "api_verified"
+                rec.meta.update(verification_route="Discourse topic API (original forum)", source_closed=bool(t.get("closed")))
+        elif _GH_ISSUE.match(rec.url):
+            o, r, n = _GH_ISSUE.match(rec.url).groups()
+            import urllib.request
+            req = urllib.request.Request(f"https://api.github.com/repos/{o}/{r}/issues/{n}",
+                                         headers={"Accept": "application/vnd.github+json", "User-Agent": "SolvantDiscovery/1.0"})
+            it = json.load(urllib.request.urlopen(req, timeout=20))
+            rec.title, rec.body = clean_text(it.get("title") or rec.title, limit=300), clean_text(it.get("body") or rec.body, limit=800)
+            rec.created_at = it.get("created_at") or rec.created_at
+            rec.state = it.get("state") or rec.state
+            rec.verification = "api_verified"
+            rec.meta.update(verification_route="GitHub REST API (original issue)")
+    except Exception as exc:   # verification failure never blocks; the lead stays unverified
+        code = getattr(exc, "code", None)
+        if code in (404, 410):
+            raise Rejected("original post no longer exists (removed or hidden)")
+        rec.meta["verification_error"] = type(exc).__name__
+    return rec
 
 
 def merge_claude(a, c: dict):
@@ -132,7 +174,17 @@ def merge_claude(a, c: dict):
     return a
 
 
-def process(cands: list[dict], now: Optional[datetime] = None) -> tuple[list[dict], Counter]:
+def _age_days(created: Optional[str], now: datetime) -> Optional[int]:
+    if not created:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (now - (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))).days
+
+
+def process(cands: list[dict], now: Optional[datetime] = None, verify: bool = False) -> tuple[list[dict], Counter]:
     now = now or datetime.now(timezone.utc)
     items, rejected, seen = [], Counter(), set()
     for c in cands[:500]:
@@ -147,6 +199,12 @@ def process(cands: list[dict], now: Optional[datetime] = None) -> tuple[list[dic
             rejected["duplicate in batch"] += 1
             continue
         seen.add(rec.url)
+        if verify:
+            try:
+                rec = verify_source(rec)
+            except Rejected as exc:
+                rejected[str(exc)] += 1
+                continue
         opp = build(rec, merge_claude(assess(rec, now=now), c))
         it = to_item(opp)
         q = c.get("qualification") or {}
@@ -156,10 +214,24 @@ def process(cands: list[dict], now: Optional[datetime] = None) -> tuple[list[dic
         except (TypeError, ValueError):
             pass
         biz_type = (c.get("business") or {}).get("type")
+        # region: Europe/UK/UAE first; explicitly elsewhere ranks lower (never hidden)
+        where = " ".join(str(x) for x in ((c.get("business") or {}).get("country"), it.get("country"), it.get("location")) if x)
+        if TARGET_COUNTRIES.search(where):
+            it["rank_score"] = min(100, it["rank_score"] + 8)
+            it["meta"]["region_priority"] = "target market"
+        elif where and it.get("location") == "other":
+            it["rank_score"] = max(0, it["rank_score"] - 8)
+        age = _age_days(rec.created_at, now)
+        it["meta"]["age_days"] = age
         if it["pipeline"] != "EXCLUDED":
             # priority follows the blended score; unverified snippets and larger organisations are never top priority
             it["priority"] = "A" if it["rank_score"] >= 70 else "B" if it["rank_score"] >= 45 else "C"
             if it["priority"] == "A" and (rec.verification == "search_snippet_only" or biz_type in ("mid_market", "enterprise")):
+                it["priority"] = "B"
+            # freshness: the last 7 days lead; 8-30 days at most B; older (or undated) at most C
+            if age is None or age > 30:
+                it["priority"] = "C" if it["priority"] in ("A", "B") else it["priority"]
+            elif age > 7 and it["priority"] == "A":
                 it["priority"] = "B"
         it["org_type"] = biz_type or it.get("org_type")
         it["engine_version"] = ENGINE
@@ -196,7 +268,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     for p in paths:
         data = json.loads(Path(p).read_text())
         cands += data if isinstance(data, list) else data.get("candidates", [])
-    items, rejected = process(cands)
+    items, rejected = process(cands, verify="--no-verify" not in argv)
     by_pipe = Counter(i["pipeline"] for i in items)
     by_src = Counter(i["source_key"] for i in items)
     print(json.dumps({"candidates": len(cands), "accepted": len(items), "rejected_before_db": dict(rejected),

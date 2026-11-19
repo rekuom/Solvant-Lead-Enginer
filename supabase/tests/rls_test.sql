@@ -90,11 +90,18 @@ set role anon;
 select pg_temp.check((r ->> 'added')::int = 2 and (r ->> 'rejected')::int = 2, 'agent mode: header token, 2 added, 2 rejected')
   from (select solvant.ingest_records(null, '{"scope":"discovery","mode":"agent","logs":[{"source_key":"linkedin","status":"ok","records":2}]}',
     '[{"source_key":"linkedin","url":"https://www.linkedin.com/posts/founder-ai-dev-1","title":"Can anyone recommend an AI developer?","verification":"search_snippet_only","pipeline":"A_DIRECT_SME","priority":"B","engine":"llm","engine_version":"claude-agent+rules"},
-      {"source_key":"make_community","url":"https://community.make.com/t/looking-for-make-dev/1","title":"Looking for a Make.com developer","verification":"agent_reviewed","pipeline":"A_DIRECT_SME","priority":"A","engine":"llm"},
+      {"source_key":"make_community","url":"https://community.make.com/t/looking-for-make-dev/1","title":"Looking for a Make.com developer","verification":"agent_reviewed","pipeline":"A_DIRECT_SME","priority":"A","engine":"llm","meta":{"discovered_by":"claude_agent","query_category":"make hire-help latest"}},
       {"source_key":"ai_shared_conversations","url":"https://chatgpt.com/share/x","verification":"search_snippet_only","pipeline":"A_DIRECT_SME"},
       {"source_key":"linkedin","url":"https://www.linkedin.com/posts/x2","verification":"fixture","pipeline":"A_DIRECT_SME"}]') r) t;
 reset role;
 select set_config('request.headers', '', false);
+select set_config('request.headers', json_build_object('x-signal-token', (select v from t_codes where k = 'ingest'))::text, false);
+set role anon;
+select solvant.ingest_records(null, '{"scope":"discovery","mode":"agent"}',
+  '[{"source_key":"make_community","url":"https://community.make.com/t/looking-for-make-dev/1","title":"Looking for a Make.com developer","verification":"api_verified","pipeline":"A_DIRECT_SME","engine":"llm"}]');
+reset role;
+select set_config('request.headers', '', false);
+select pg_temp.check((select verification from solvant.opportunities where url = 'https://community.make.com/t/looking-for-make-dev/1') = 'api_verified', 're-seen lead upgraded to api_verified');
 select pg_temp.check((select engine from solvant.classifications c join solvant.opportunities o on o.id = c.opportunity_id
    where o.url = 'https://community.make.com/t/looking-for-make-dev/1') = 'llm', 'agent qualification stored as engine llm');
 select pg_temp.check((select origin from solvant.discovery_runs where source_key = 'linkedin' order by started_at desc limit 1) = 'scheduler', 'agent runs logged as scheduler');
@@ -102,6 +109,15 @@ set role anon;
 select pg_temp.expect_error($q$select solvant.ingest_records(null, '{"scope":"discovery","mode":"agent"}', '[]')$q$, 'no header and no argument: rejected');
 reset role;
 select pg_temp.check(not (select enabled from solvant.sources where key = 'find_a_tender'), 'tender collectors switched off');
+select set_config('request.headers', json_build_object('x-signal-token', (select v from t_codes where k = 'ingest'))::text, false);
+set role anon;
+select pg_temp.check((solvant.discovery_feedback() -> 'by_source') @> '[{"key":"make_community"}]'::jsonb, 'feedback: per-source counts via header token');
+select pg_temp.check(position('linkedin.com/posts' in solvant.discovery_feedback()::text) = 0, 'feedback contains no lead content');
+reset role;
+select set_config('request.headers', '', false);
+set role anon;
+select pg_temp.expect_error('select solvant.discovery_feedback()', 'feedback needs a valid token');
+reset role;
 
 -- 5. viewer / editor permissions ------------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
