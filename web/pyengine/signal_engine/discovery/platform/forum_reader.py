@@ -29,8 +29,10 @@ FORUMS = [  # (host, category slug, category id) — public hiring categories (r
 ]
 FORUM_HOSTS = {h for h, _, _ in FORUMS}
 DELAY_S = 1.5
-SELLER = re.compile(r"\[?\s*for\s*hire\s*\]?|\bi will\b|\boffer(ing)? (my|our) services\b|\bavailable for (work|projects)\b|"
-                    r"\bopen to (work|projects)\b|\bhire me\b|\[offer", re.I)
+SELLER = re.compile(r"\[?\s*for\s*hire\s*\]?|\bi will\b|\boffer(ing)? (my|our) services\b|\bavailable (for|to)\b|"
+                    r"\b(developer|designer|expert|freelancer|agency|engineer|consultant)s? (is |are )?available\b|"
+                    r"\bopen to (new )?(work|projects|opportunit\w*|roles|clients)\b|\btaking on (new )?(clients|projects)\b|"
+                    r"\bhire me\b|\[offer|\bmy services\b|\bportfolio\b|\blooking for (new )?(clients|projects|work)\b", re.I)
 # not demand at all: unpaid / commission-only / internships / volunteers / sales-partner recruiting
 NOT_DEMAND = re.compile(r"\binternship\b|\bvolunteer\b|\bcommission[- ](based|only)\b|\bunpaid\b|\bsweat equity\b|"
                         r"\breferral partners?\b|\bbusiness development\b|\bBD\b|\bco-?founder\b", re.I)

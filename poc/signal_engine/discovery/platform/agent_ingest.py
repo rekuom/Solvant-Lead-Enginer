@@ -53,7 +53,10 @@ REJECT_URL = re.compile(
     r"chatgpt\.com/share|chat\.openai\.com/share|claude\.ai/share|g\.co/gemini/share|gemini\.google\.com/share|poe\.com/s/|"
     r"fiverr\.com|upwork\.com/(hire|freelancers|services|resources)/|linkedin\.com/jobs|indeed\.|glassdoor\.|/for-hire|"
     r"\.pages\.dev|\.web\.app)", re.I)
-SELLER_TITLE = re.compile(r"^\s*(\[?for hire\]?|i will\b|offering\b|we (build|offer)\b|available for)", re.I)
+SELLER_TITLE = re.compile(r"^\s*(\[?for hire\]?|i will\b|offering\b|we (build|offer)\b|available for)|"
+                          r"\b(developer|designer|expert|freelancer|agency|engineer|consultant)s? (is |are )?available\b|"
+                          r"\bopen to (new )?(work|projects|opportunit\w*|roles|clients)\b|\btaking on (new )?(clients|projects)\b|"
+                          r"\blooking for (new )?(clients|projects|work)\b", re.I)
 INTENTS = {"explicit_hire_request", "recommendation_request", "quote_request", "partner_search", "paid_bounty", "problem_only",
            "employment_or_staffing", "none_or_discussion", "seller_offer", "job_seeker"}
 SMALL = {"independent_sme", "startup", "solo_founder", "small_agency"}
