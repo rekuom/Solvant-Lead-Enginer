@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REG = ROOT / "poc" / "signal_engine" / "discovery" / "data" / "source_registry.json"
-VERSION = "20261119000008"
+VERSION = "20261119000009"
 OUT = ROOT / "supabase" / "migrations" / f"{VERSION}_refresh_sources.sql"
 # connectors that exist in the engine and can run in the scheduled GitHub Actions collector
 SCHEDULABLE = {"contracts_finder", "find_a_tender", "ted", "github_issues", "github_discussions", "rss_atom"}

@@ -74,7 +74,7 @@ API_SOURCES = {"freelancer": "freelancer_com", "theirstack": "theirstack"}
 # platforms whose pages the agent may read (public forums / GitHub, low volume, robots.txt permitting)
 PAGE_READ_ALLOWED = {"n8n_community", "make_community", "zapier_community", "power_platform_community", "indie_hackers",
                      "hubspot_salesforce_pipedrive_zoho_ghl", "shopify_woo_xero_qbo_airtable_notion_bubble_webflow_stripe",
-                     "github_issues", "uk_business_forums"}
+                     "github_issues", "uk_business_forums", "eu_freelance_boards", "peopleperhour"}
 # never acceptable, whatever the route
 REJECT_ALWAYS = re.compile(
     r"(find-tender\.service\.gov\.uk|contractsfinder\.service\.gov\.uk|ted\.europa\.eu|\.gov(\.[a-z]{2})?/|sam\.gov|tenders?\b|"
@@ -175,6 +175,10 @@ def to_record(c: dict) -> RawRecord:
         meta["discovered_via"] = f"{api}_api"
         if isinstance(c.get("facts"), dict):
             meta["facts"] = {k: v for k, v in c["facts"].items() if k in ("skills", "bid_count", "upgrades", "outsourcing_fit", "remote", "location")}
+    if c.get("board_listing") and page_read:
+        meta.update(board_listing=True, verification_route="read from the public project board")
+        if isinstance(c.get("facts"), dict):
+            meta["facts"] = {k: v for k, v in c["facts"].items() if k in ("bid_count", "end_customer", "contract", "remote", "language", "replies")}
     if c.get("budget"):
         meta["budget"] = str(c["budget"])[:60]
     verification = ("licensed_import" if api == "theirstack" else "api_verified" if api == "freelancer"
@@ -193,11 +197,11 @@ TARGET_COUNTRIES = re.compile(
     r"czech|slovakia|hungary|romania|bulgaria|greece|croatia|slovenia|serbia|estonia|latvia|lithuania|malta|cyprus|europe|eu)\b", re.I)
 
 
-def verify_source(rec: RawRecord, fetch=None, fetch_freelancer=None) -> RawRecord:
+def verify_source(rec: RawRecord, fetch=None, fetch_freelancer=None, fetch_board=None) -> RawRecord:
     """Re-read the ORIGINAL post through the publisher's official API where one exists (approved Discourse forums, GitHub).
     On success the record carries the source's own title/date/text and verification 'api_verified' — no manual click needed.
     On failure the agent's reading is kept as 'agent_reviewed' with the failure noted; a missing/removed topic is rejected."""
-    from . import forum_reader
+    from . import boards_reader, forum_reader
     fetch = fetch or forum_reader.fetch_topic
     host = (urlsplit(rec.url).hostname or "").lower()
     try:
@@ -208,6 +212,14 @@ def verify_source(rec: RawRecord, fetch=None, fetch_freelancer=None) -> RawRecor
                 rec.created_at = t.get("created") or rec.created_at
                 rec.verification = "api_verified"
                 rec.meta.update(verification_route="Discourse topic API (original forum)", source_closed=bool(t.get("closed")))
+        elif host in boards_reader.BOARD_HOSTS and rec.meta.get("board_listing"):
+            t = (fetch_board or boards_reader.fetch_listing)(rec.url)
+            if t is None:
+                raise Rejected("original post no longer exists (removed or hidden)")
+            if t.get("closed"):
+                rec.state = "closed"
+                rec.meta["source_closed"] = True
+            rec.meta.update(verification_route="listing re-read automatically from the public board")
         elif rec.source_key == "freelancer_com" and str(rec.meta.get("api_id") or "").isdigit():
             from . import freelancer_feed
             p = (fetch_freelancer or freelancer_feed.get_project)(int(rec.meta["api_id"]))
@@ -254,6 +266,12 @@ def merge_claude(a, c: dict):
         a.buying_intent = Dimension(intent, ev + a.buying_intent.evidence[:2], "medium")
     if q.get("relevance") in ("relevant", "uncertain", "not_relevant", "product_only"):
         a.technical_relevance = Dimension(q["relevance"], ev[:1] + a.technical_relevance.evidence[:3], "medium")
+    elif c.get("board_listing") and a.technical_relevance.value in ("not_relevant", "uncertain", "unknown"):
+        # the board reader's multilingual service filter matched (the rule engine's relevance terms are English-only)
+        from .boards_reader import STRONG
+        m = STRONG.search(f"{c.get('title') or ''} {(c.get('evidence_quote') or '')[:500]}")
+        if m:
+            a.technical_relevance = Dimension("relevant", [f"board listing: '{m.group(0)}'"], "medium")
     bt = (c.get("business") or {}).get("type")
     if bt in SMALL:
         a.business_type = Dimension("independent_sme_self_reported", [f"claude: {bt}"], "medium")
@@ -349,6 +367,21 @@ def process(cands: list[dict], now: Optional[datetime] = None, verify: bool = Fa
     return items, rejected
 
 
+def search_entries(searches: list[dict]) -> list[dict]:
+    """Normalise the task's search log: {strategy, query, lang?, market?, results?, kept?}. Text only, no lead content."""
+    out = []
+    for x in searches[:200]:
+        strategy, query = str(x.get("strategy") or "").strip().lower()[:40], clean_text(str(x.get("query") or ""), limit=300)
+        if strategy and query:
+            out.append({"strategy": strategy, "query": query, "lang": str(x.get("lang") or "")[:10] or None,
+                        "market": str(x.get("market") or "")[:20] or None, "kept": max(0, min(100, int(x.get("kept") or 0)))})
+    return out
+
+
+def log_searches(searches: list[dict]) -> dict:
+    return rpc("log_searches", {"p_token": os.environ.get("SIGNAL_INGEST_TOKEN", ""), "p_searches": search_entries(searches)}) or {}
+
+
 def push(items: list[dict], counts: Counter) -> dict:
     token = os.environ.get("SIGNAL_INGEST_TOKEN", "")   # empty -> the database reads the proxy-injected x-signal-token header
     logs = [{"source_key": k, "status": "ok", "requests": 0, "records": n} for k, n in counts.items()]
@@ -372,13 +405,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("usage: agent_ingest.py candidates.json [--dry-run]")
         return 2
     cands: list[dict] = []
+    searches: list[dict] = []
     for p in paths:
         data = json.loads(Path(p).read_text())
         cands += data if isinstance(data, list) else data.get("candidates", [])
+        if isinstance(data, dict):
+            searches += [x for x in data.get("searches", []) if isinstance(x, dict)]
     items, rejected = process(cands, verify="--no-verify" not in argv)
     by_pipe = Counter(i["pipeline"] for i in items)
     by_src = Counter(i["source_key"] for i in items)
-    print(json.dumps({"candidates": len(cands), "accepted": len(items), "rejected_before_db": dict(rejected),
+    print(json.dumps({"candidates": len(cands), "searches_logged": len(search_entries(searches)), "accepted": len(items), "rejected_before_db": dict(rejected),
                       "pipelines": dict(by_pipe), "priority": dict(Counter(i["priority"] for i in items))}, indent=1))
     if "--dry-run" in argv:
         return 0
@@ -388,6 +424,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"push FAILED: HTTP {exc.status}")
         return 3
     print("database: " + json.dumps(res))
+    if searches:
+        try:
+            print("search log: " + json.dumps(log_searches(searches)))
+        except RestError as exc:
+            print(f"search log FAILED: HTTP {exc.status}")
     return 0
 
 
