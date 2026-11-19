@@ -28,3 +28,7 @@ supabase/.temp/
 Thumbs.db
 .idea/
 .vscode/
+
+# created by the cloud environment setup script (npm install at the repo root); not part of the project
+/package-lock.json
+/node_modules/
