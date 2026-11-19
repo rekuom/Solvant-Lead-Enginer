@@ -102,8 +102,8 @@ jobs:
         working-directory: poc
         env:
           SIGNAL_INGEST_TOKEN: ${{ secrets.SIGNAL_INGEST_TOKEN }}
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://dfnaevcsergsphiiodtm.supabase.co' }}   # public project URL
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_y4MeQOuV_ZyEppl39oRVVw_wK_fW8Pf' }}   # public publishable key (RLS + ingest token protect data)
           BRAVE_SEARCH_API_KEY_PRESENT: ${{ secrets.BRAVE_SEARCH_API_KEY != '' && 'yes' || '' }}
           MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
         run: |
@@ -188,8 +188,8 @@ jobs:
         working-directory: poc
         env:
           SIGNAL_INGEST_TOKEN: ${{ secrets.SIGNAL_INGEST_TOKEN }}
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://dfnaevcsergsphiiodtm.supabase.co' }}   # public project URL
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_y4MeQOuV_ZyEppl39oRVVw_wK_fW8Pf' }}   # public publishable key (RLS + ingest token protect data)
         run: python -m signal_engine.discovery.platform.push
 
       # FAIL-CLOSED: nothing from out/discovery reaches the job summary or an artifact unless the report step
