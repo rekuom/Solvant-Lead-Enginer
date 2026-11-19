@@ -16,6 +16,9 @@ class ForumReader(unittest.TestCase):
             {"id": 2, "slug": "b", "title": "[For Hire] n8n automation builder", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 3, "slug": "c", "title": "[HIRING] Full-Time CRM Engineer | $2,000/month", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 6, "slug": "f", "title": "Volunteer AI ambassadors wanted", "created_at": "2026-11-18T10:00:00Z"},
+            {"id": 7, "slug": "g", "title": "Bubble Developer available: MVPs, booking platforms & app fixes", "created_at": "2026-11-18T10:00:00Z"},
+            {"id": 8, "slug": "h", "title": "Open to Opportunities - Full-Stack Developer / Tech Lead", "created_at": "2026-11-18T10:00:00Z"},
+            {"id": 9, "slug": "i", "title": "Taking on new clients for n8n builds", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 4, "slug": "d", "title": "Looking for BD & Referral Partners — Commission-Based", "created_at": "2026-11-18T10:00:00Z"},
             {"id": 5, "slug": "e", "title": "Hiring: Make.com + Airtable specialist", "created_at": "2026-10-01T10:00:00Z"},
         ]
