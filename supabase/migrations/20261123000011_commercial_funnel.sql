@@ -115,6 +115,11 @@ begin
                           then jsonb_build_object('action', jsonb_build_object('type', 'none', 'label', 'No action: ' || v_status || ' at source',
                                                                                'where', o.meta -> 'action' ->> 'where'),
                                                   'next_action', 'No action: ' || v_status || ' at source')
+                          when not (o.meta ? 'action') and o.pipeline in ('B_FREELANCE_PROJECT', 'GLOBAL_REVIEW')
+                            -- leads saved before next steps existed: a live board project's route is an in-platform proposal
+                          then jsonb_build_object('action', jsonb_build_object('type', 'submit_proposal', 'where', 'the project board',
+                                                                               'label', 'Submit a proposal on the project board; contact stays in-platform'),
+                                                  'next_action', 'Submit a proposal on the project board; contact stays in-platform')
                           else '{}'::jsonb end,
            source_state = case v_status when 'closed' then 'closed' when 'removed' then 'removed' when 'verified_open' then 'open'
                                         else o.source_state end,

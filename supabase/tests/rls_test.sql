@@ -138,6 +138,9 @@ select pg_temp.check((solvant.record_board_checks('', '[{"url":"https://www.code
                                                         {"url":"https://community.make.com/t/looking-for-make-dev/1","status":"closed"}]') ->> 'recorded')::int = 2,
                      'board re-check: only board listings are updated');
 select pg_temp.check(jsonb_array_length(solvant.board_checks_due('', 40)) = 1, 'closed listings are no longer re-checked');
+select solvant.ingest_records('', '{"scope":"discovery","mode":"agent"}',
+  '[{"source_key":"eu_freelance_boards","url":"https://www.codeur.com/projects/3-legacy","title":"Ancien projet","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"B","engine":"llm","meta":{"discovered_by":"claude_agent","board_listing":true}}]');
+select solvant.record_board_checks('', '[{"url":"https://www.codeur.com/projects/3-legacy","status":"verified_open"}]');
 select pg_temp.check((solvant.save_proposal_drafts('', '[{"url":"https://www.codeur.com/projects/1-agent-ia-devis","title":"Agent IA devis","body":"Bonjour, ...","amount":"1800","currency":"EUR"},
                                                          {"url":"https://example.invalid/none","body":"x"}]') ->> 'added')::int = 1, 'proposal draft saved for a known lead only');
 select pg_temp.check((solvant.save_proposal_drafts('', '[{"url":"https://www.codeur.com/projects/1-agent-ia-devis","body":"Bonjour, version 2"}]') ->> 'updated')::int = 1,
@@ -164,6 +167,8 @@ select pg_temp.check((solvant.sales_funnel() ->> 'open_now')::int >= 1 and (solv
                      and (solvant.sales_funnel() ->> 'proposals_submitted')::int = 0, 'sales funnel separates open, drafted and submitted');
 reset role;
 
+select pg_temp.check((select meta -> 'action' ->> 'type' from solvant.opportunities where url = 'https://www.codeur.com/projects/3-legacy') = 'submit_proposal',
+                     'legacy open board lead gets a proposal next step on re-check');
 delete from solvant.opportunities where url like 'https://www.codeur.com/projects/%';   -- keep later counts stable
 
 reset role;
