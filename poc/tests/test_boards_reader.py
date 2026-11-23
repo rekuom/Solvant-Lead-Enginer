@@ -146,6 +146,16 @@ class Gate(unittest.TestCase):
         self.assertEqual(ai.process([snippet], now=NOW)[0][0]["meta"]["action"]["type"], "research")
 
 
+class SyntheticGuard(unittest.TestCase):
+    def test_real_brief_mentioning_synthetic_data_is_kept_fixture_marker_rejected(self):
+        c = Gate().cand()
+        c["evidence_quote"] = "Penetration test on a test environment with synthetic data only."
+        items, rej = ai.process([c], now=NOW)
+        self.assertEqual((len(items), dict(rej)), (1, {}))
+        c2 = dict(c, title="SYNTHETIC FIXTURE need help")
+        self.assertEqual(ai.process([c2], now=NOW)[1], {"synthetic/test data": 1})
+
+
 class ListingCheck(unittest.TestCase):
     CD = ('<meta property="og:title" content="Automatiser la facturation">'
           '<div>Automatiser la facturation Ouvert · 500 € à 1 000 € · 12 offres · 300 vues</div><a>Faire une offre</a> '

@@ -155,7 +155,7 @@ def to_record(c: dict) -> RawRecord:
     quote = clean_text(str(c.get("evidence_quote") or c.get("excerpt") or ""), limit=800)
     if not (title or quote):
         raise Rejected("no title or evidence")
-    if "SYNTHETIC" in (title + quote).upper() or ".invalid" in url:
+    if "SYNTHETIC FIXTURE" in (title + quote).upper() or ".invalid" in url:   # repository fixture marker (a real brief may say "synthetic data")
         raise Rejected("synthetic/test data")
     page_read = bool(c.get("page_read")) and (key in PAGE_READ_ALLOWED or api is not None)
     biz = c.get("business") or {}
