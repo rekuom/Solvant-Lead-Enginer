@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { PageHeader, StatCard, Section, fmtMoney, fmtDate, Badge } from "@/components/ui";
 import { PIPELINES } from "@/lib/labels";
+import { CHECK_STATUS, FUNNEL_STEPS, isActionable, nextStep } from "@/lib/commercial";
 
 export const metadata = { title: "Overview" };
 
@@ -9,17 +10,25 @@ type Counts = Record<string, number>;
 
 export default async function Overview() {
   const { supabase } = await requireMember();
-  const [{ data: counts }, { data: failing }, { data: recent }] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const [{ data: counts }, { data: failing }, { data: recent }, { data: funnel }, { data: candidates }, { data: drafts }] = await Promise.all([
     supabase.rpc("dashboard_counts"),
     supabase.from("sources").select("key,name,last_status,last_error,last_run_at").eq("enabled", true).in("last_status", ["failed", "partial"]),
     supabase.from("opportunities").select("id,title,pipeline,source_key,discovered_at,priority").neq("pipeline", "EXCLUDED")
       .order("discovered_at", { ascending: false }).limit(8),
+    supabase.rpc("sales_funnel", { p_days: 30 }),
+    supabase.from("opportunities").select("id,title,pipeline,priority,source_key,source_state,stage,budget_text,published_at,rank_score,meta")
+      .in("priority", ["A", "B"]).in("pipeline", ["A_DIRECT_SME", "B_FREELANCE_PROJECT", "C_AGENCY_PARTNER"]).is("duplicate_of", null)
+      .gte("discovered_at", monthAgo).order("priority").order("rank_score", { ascending: false }).limit(60),
+    supabase.from("proposals").select("opportunity_id,status").in("status", ["draft", "sent"]),
   ]);
+  const f = (funnel ?? {}) as Counts;
+  const draftFor = new Map((drafts ?? []).map((d) => [d.opportunity_id, d.status]));
+  const best = (candidates ?? []).filter(isActionable).slice(0, 10);
   const c = (counts ?? {}) as Counts;
   const n = (k: string) => Number(c[k] ?? 0);
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   return (
     <div className="space-y-6">
       <PageHeader title="Overview" subtitle="Every number is live from the private database and links to the records behind it. Zero means zero."
@@ -32,6 +41,7 @@ export default async function Overview() {
         </div>
       ) : null}
 
+      <h2 className="muted text-xs font-semibold uppercase tracking-wide">Discovery (records found)</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="New today" value={n("today")} href={`/opportunities?from=${today}`} />
         <StatCard label="New this week" value={n("week")} href={`/opportunities?from=${weekAgo}`} />
@@ -51,15 +61,37 @@ export default async function Overview() {
         </div>
       </Section>
 
-      <Section title="Sales funnel">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <StatCard label="Contacted" value={n("contacted")} href="/opportunities?stage=contacted_plus" />
-          <StatCard label="Replies received" value={n("replied")} href="/opportunities?stage=replied_plus" />
-          <StatCard label="Proposals submitted" value={n("proposals")} href="/opportunities?stage=proposal_plus" />
-          <StatCard label="Deals won" value={n("won")} href="/opportunities?stage=won" tone="green" />
-          <StatCard label="Revenue (won)" value={fmtMoney(n("revenue"))} href="/analytics" />
-          <StatCard label="Lead acquisition costs" value={fmtMoney(n("acquisition_costs"))} href="/analytics#costs" />
+      <Section title="Sales funnel (buyer opportunities, last 30 days)">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+          {FUNNEL_STEPS.map((s) => <StatCard key={s.key} label={s.label} value={Number(f[s.key] ?? 0)} href="/opportunities" hint={s.hint} tone={s.key === "won" ? "green" : undefined} />)}
         </div>
+        <p className="muted mt-2 text-xs">Discovery counts above are records found; this funnel counts only real buyer opportunities and your actual sales steps.
+          Revenue won: {fmtMoney(Number(f.revenue ?? 0))} · Lead acquisition costs: {fmtMoney(n("acquisition_costs"))}</p>
+      </Section>
+
+      <Section title="Best open opportunities">
+        {best.length ? (
+          <ul className="divide-y line">
+            {best.map((o) => {
+              const st = nextStep(o);
+              const chk = CHECK_STATUS[o.meta?.board_check?.status ?? ""];
+              const d = draftFor.get(o.id);
+              return (
+                <li key={o.id} className="py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={o.priority === "A" ? "green" : "gray"}>{o.priority}</Badge>
+                    <Link href={`/opportunities/${o.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">{o.title || "(untitled)"}</Link>
+                    {chk ? <Badge tone={chk.tone} title={chk.help}>{chk.label}</Badge> : null}
+                    {d === "draft" ? <Badge tone="violet">Draft ready</Badge> : d === "sent" ? <Badge tone="green">Submitted</Badge> : null}
+                  </div>
+                  <p className="muted mt-0.5 text-xs">
+                    <b>{st.verb}:</b> {st.label} · {o.meta?.board_check?.budget ?? o.budget_text ?? "budget not stated"} · posted {fmtDate(o.published_at)}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        ) : <p className="muted text-sm">No live opportunities with a permitted route right now.</p>}
       </Section>
 
       <Section title="Latest opportunities" actions={<Link href="/opportunities" className="text-sm text-brand-600">View all →</Link>}>

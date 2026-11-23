@@ -115,14 +115,76 @@ class Gate(unittest.TestCase):
     def test_reread_rejects_removed_and_flags_closed(self):
         rec = ai.to_record(self.cand())
         with self.assertRaises(ai.Rejected):
-            ai.verify_source(rec, fetch_board=lambda u: None)
-        rec = ai.verify_source(ai.to_record(self.cand()), fetch_board=lambda u: {"title": "x", "closed": True})
-        self.assertEqual((rec.state, rec.meta["source_closed"]), ("closed", True))
+            ai.verify_source(rec, fetch_board=lambda u, t: {"status": "removed"})
+        rec = ai.verify_source(ai.to_record(self.cand()), fetch_board=lambda u, t: {"status": "closed", "checks": ["closed"]})
+        self.assertEqual((rec.state, rec.meta["source_closed"], rec.meta["board_check"]["status"]), ("closed", True, "closed"))
 
-    def test_closed_listing_is_excluded(self):
-        c = self.cand()
-        rec = ai.verify_source(ai.to_record(c), fetch_board=lambda u: {"title": "x", "closed": True})
-        self.assertEqual(rec.state, "closed")
+    def test_verified_open_uses_source_date_budget_and_bids(self):
+        chk = {"status": "verified_open", "title_match": True, "posted_at": "2026-11-18", "date_confirmed": True, "open_confirmed": True,
+               "budget": "1 000 € à 10 000 €", "bids": 140, "requirements": "Brief complet: automatiser les devis et la facturation."}
+        items, _ = ai.process([self.cand()], now=NOW, verify=False)
+        base = items[0]["rank_score"]
+        import unittest.mock as m
+        with m.patch.object(ai, "verify_source", side_effect=lambda rec: ai.apply_board_check(rec, chk)):
+            it = ai.process([self.cand()], now=NOW, verify=True)[0][0]
+        self.assertEqual((it["published_at"], it["meta"]["board_check"]["status"], it["meta"]["crowded"]), ("2026-11-18", "verified_open", 140))
+        self.assertIn("automatiser les devis", it["body_excerpt"])
+        self.assertLess(it["rank_score"], base + 4)            # 140 offers outweighs the verified-open bonus
+
+    def test_next_action_per_kind(self):
+        it = ai.process([self.cand()], now=NOW)[0][0]
+        self.assertEqual(it["meta"]["action"]["type"], "submit_proposal")
+        self.assertIn("Codeur", it["meta"]["next_action"])
+        forum = {"url": "https://community.make.com/t/need-help-automating-invoices/1", "title": "Need help automating invoices (paid)",
+                 "evidence_quote": "Small UK firm, paid work: automate invoices from Stripe to Xero.", "published_at": "2026-11-18",
+                 "page_read": True, "kind": "customer", "business": {"type": "independent_sme", "country": "UK"},
+                 "qualification": {"intent": "explicit_hire_request", "relevance": "relevant", "score": 80}}
+        self.assertEqual(ai.process([forum], now=NOW)[0][0]["meta"]["action"]["type"], "reply_publicly")
+        invited = dict(forum, url="https://community.make.com/t/x/2", evidence_quote=forum["evidence_quote"] + " DM me with your rate.")
+        self.assertEqual(ai.process([invited], now=NOW)[0][0]["meta"]["action"]["type"], "contact_permitted")
+        snippet = dict(forum, url="https://www.linkedin.com/posts/x-1", page_read=False)
+        self.assertEqual(ai.process([snippet], now=NOW)[0][0]["meta"]["action"]["type"], "research")
+
+
+class ListingCheck(unittest.TestCase):
+    CD = ('<meta property="og:title" content="Automatiser la facturation">'
+          '<div>Automatiser la facturation Ouvert · 500 € à 1 000 € · 12 offres · 300 vues</div><a>Faire une offre</a> '
+          '<a>Publier un projet similaire</a><div>PME de 8 salariés : relier devis, factures et banque.</div>'
+          '<div>Budget indicatif : 500 € à 1 000 € Publication : 21 novembre 2026 à 16h10 Profils recherchés : Développeur make freelance</div>')
+    PPH = ('<title>Zapier workflows for clinic - PeoplePerHour.com</title><script type="application/ld+json">'
+           '{"@type":"JobPosting","title":"Zapier workflows for clinic","datePosted":"2026-11-22 02:48:40","validThrough":"2026-12-22 02:48:40"}</script>'
+           '<div>Fixed Price £ 300 (approx. $ 394 ) Posted: 1 day ago Proposals: 26 OPPORTUNITY Open for Proposals</div>'
+           '<div>Description Experience Level: Expert We need Zapier between Calendly and Xero. Clarification Board</div>')
+
+    def test_codeur_verified_open(self):
+        c = b.check_listing("https://www.codeur.com/projects/1-x", "Automatiser la facturation", get=lambda u: self.CD, now=NOW)
+        self.assertEqual((c["status"], c["posted_at"], c["budget"], c["bids"]), ("verified_open", "2026-11-21", "500 € à 1 000 €", 12))
+        self.assertIn("relier devis", c["requirements"])
+
+    def test_pph_verified_open_with_original_budget(self):
+        c = b.check_listing("https://www.peopleperhour.com/freelance-jobs/a/b/x-1", "Zapier workflows for clinic", get=lambda u: self.PPH, now=NOW)
+        self.assertEqual((c["status"], c["budget"], c["bids"], c["valid_through"]), ("verified_open", "£300 (fixed price)", 26, "2026-12-22"))
+
+    def test_reachable_is_not_verified(self):
+        c = b.check_listing("https://www.codeur.com/projects/1-x", "Something else entirely", get=lambda u: self.CD, now=NOW)
+        self.assertNotEqual(c["status"], "verified_open")
+        c = b.check_listing("https://www.codeur.com/projects/1-x", "Automatiser la facturation",
+                            get=lambda u: self.CD.replace("Ouvert ·", "· "), now=NOW)
+        self.assertEqual(c["status"], "verified_posted")    # title + date confirmed, availability not stated
+
+    def test_closed_expired_removed_unreachable(self):
+        self.assertEqual(b.check_listing("https://www.codeur.com/projects/1-x", "Automatiser la facturation",
+                                         get=lambda u: self.CD.replace("Ouvert", "Fermé"), now=NOW)["status"], "closed")
+        late = datetime(2027, 1, 5, tzinfo=timezone.utc)
+        self.assertEqual(b.check_listing("https://www.peopleperhour.com/x-1", "Zapier workflows for clinic", get=lambda u: self.PPH, now=late)["status"], "closed")
+
+        def gone(u):
+            raise b.FetchError("HTTP 404")
+
+        def down(u):
+            raise b.FetchError("HTTP 503")
+        self.assertEqual(b.check_listing("https://www.codeur.com/projects/1-x", "x", get=gone)["status"], "removed")
+        self.assertEqual(b.check_listing("https://www.codeur.com/projects/1-x", "x", get=down)["status"], "unreachable")
 
 
 class Feedback(unittest.TestCase):
@@ -159,3 +221,35 @@ class SearchLog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Commercial(unittest.TestCase):
+    def test_draft_file_validation(self):
+        import tempfile
+        from signal_engine.discovery.platform import commercial as cm
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump([{"url": "https://www.codeur.com/projects/1-x", "title": "T", "body": "Bonjour", "amount": 1800, "currency": "eur"},
+                       {"url": "http://insecure", "body": "x"}, {"url": "https://x", "body": "  "}], fh)
+        d = cm.load_drafts(fh.name)
+        self.assertEqual([(x["url"], x["amount"], x["currency"]) for x in d], [("https://www.codeur.com/projects/1-x", "1800", "EUR")])
+
+    def test_report_is_concise_and_actionable(self):
+        from signal_engine.discovery.platform import commercial as cm
+        txt = cm.format_report([{"priority": "A", "title": "Zapier for clinic", "budget_text": "£300", "bids": "26", "posted": "2026-11-22",
+                                 "check_status": "verified_open", "draft_ready": True, "next_step": "Submit a proposal on PeoplePerHour",
+                                 "url": "https://www.peopleperhour.com/x"}], {"open_now": 5, "proposal_possible": 3})
+        self.assertIn("Next: Submit a proposal on PeoplePerHour", txt)
+        self.assertIn("open (confirmed by board)", txt)
+        self.assertIn("open now 5", txt)
+
+    def test_recheck_sends_counts_not_requirements(self):
+        sent = {}
+
+        def fake(name, args):
+            if name == "board_checks_due":
+                return [{"url": "https://www.codeur.com/projects/1-x", "title": "Automatiser la facturation"}]
+            sent.update(args)
+            return {"recorded": 1}
+        out = b.recheck(5, get=lambda u: ListingCheck.CD, rpc_fn=fake, delay=0)
+        self.assertEqual(out["by_status"], {"verified_open": 1})
+        self.assertNotIn("requirements", sent["p_checks"][0])

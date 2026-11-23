@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { requireMember, canEdit } from "@/lib/session";
 import { Badge, PageHeader, Section, fmtDate, fmtMoney } from "@/components/ui";
 import { PIPELINE_BY_KEY, STAGES, STAGE_LABEL, VERIFICATION, humanize, INTENT_TONE } from "@/lib/labels";
-import { addContactChannel, addFollowUp, addNote, addProposal, completeFollowUp, logActivity, markDuplicate, setStage } from "../../actions";
+import { addContactChannel, addFollowUp, addNote, addProposal, completeFollowUp, logActivity, markDuplicate, markProposalSubmitted, setStage } from "../../actions";
+import { CHECK_STATUS, nextStep } from "@/lib/commercial";
 import { DetailsForm, OverrideForm, VerifyForm } from "./forms";
 
 type Dim = { value?: string; evidence?: string[]; confidence?: string };
@@ -37,6 +38,9 @@ export default async function OpportunityDetail({ params }: { params: Promise<{ 
   const v = VERIFICATION[o.verification];
   const p = PIPELINE_BY_KEY[o.pipeline];
   const rules = (o.meta?.marketplace_rules ?? null) as Record<string, unknown> | null;
+  const step = nextStep(o);
+  const bc = (o.meta?.board_check ?? null) as Record<string, any> | null;
+  const chk = bc?.status ? CHECK_STATUS[bc.status] : null;
 
   return (
     <div className="space-y-5">
@@ -53,6 +57,22 @@ export default async function OpportunityDetail({ params }: { params: Promise<{ 
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          <Section title="Next step">
+            <p className="text-sm"><Badge tone={step.tone}>{step.verb}</Badge> {step.label}</p>
+            {chk ? (
+              <div className="mt-3 text-sm">
+                <p><Badge tone={chk.tone} title={chk.help}>{chk.label}</Badge>
+                  <span className="muted text-xs"> · last checked {fmtDate(bc?.checked_at, true)}{bc?.previous_status && bc.previous_status !== bc.status ? ` · was ${CHECK_STATUS[bc.previous_status]?.label ?? bc.previous_status}` : ""}</span></p>
+                <ul className="muted mt-1 list-disc pl-4 text-xs">{(bc?.checks ?? []).map((c: string, i: number) => <li key={i}>{c}</li>)}</ul>
+                <p className="muted mt-1 text-xs">
+                  {bc?.budget ? <>Budget on the board: <b>{bc.budget}</b> · </> : null}
+                  {bc?.bids != null ? <>{bc.bids} offers so far · </> : null}
+                  {bc?.valid_through ? <>open until {bc.valid_through}</> : null}
+                </p>
+              </div>
+            ) : <p className="muted mt-2 text-xs">Verification route: {o.meta?.verification_route ?? "—"}</p>}
+          </Section>
+
           <Section title="1–2 · Source evidence (facts as published)">
             <dl className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
               <div><dt className="muted text-xs">Source</dt><dd>{src.data?.name ?? o.source_key}</dd></div>
@@ -214,7 +234,24 @@ export default async function OpportunityDetail({ params }: { params: Promise<{ 
 
           <Section title="Proposals">
             <ul className="mb-2 space-y-1 text-sm">
-              {(props.data ?? []).map((pr) => <li key={pr.id}>{pr.title} · {fmtMoney(pr.amount, pr.currency ?? "GBP")} · {pr.status}</li>)}
+              {(props.data ?? []).map((pr) => (
+                <li key={pr.id} className="rounded-lg border line p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <b className="min-w-0 flex-1">{pr.title}</b>
+                    {pr.origin === "claude_draft" ? <Badge tone="violet">Draft prepared for you</Badge> : null}
+                    <Badge tone={pr.status === "sent" ? "green" : "gray"}>{pr.status === "sent" ? "Submitted" : humanize(pr.status)}</Badge>
+                    {pr.amount ? <span className="muted text-xs">{fmtMoney(pr.amount, pr.currency ?? "GBP")}</span> : null}
+                  </div>
+                  {pr.body ? <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 font-sans text-xs dark:bg-white/5">{pr.body}</pre> : null}
+                  {pr.status === "draft" && editable ? (
+                    <form action={markProposalSubmitted} className="mt-2 flex items-center gap-2">
+                      <input type="hidden" name="id" value={o.id} /><input type="hidden" name="proposal" value={pr.id} />
+                      <button className="btn">I submitted this on the platform</button>
+                      <span className="muted text-xs">Edit it on the platform before sending; nothing is sent from here.</span>
+                    </form>
+                  ) : null}
+                </li>
+              ))}
             </ul>
             {editable ? (
               <form action={addProposal} className="grid grid-cols-2 gap-2">

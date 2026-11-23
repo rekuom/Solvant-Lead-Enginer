@@ -197,6 +197,35 @@ TARGET_COUNTRIES = re.compile(
     r"czech|slovakia|hungary|romania|bulgaria|greece|croatia|slovenia|serbia|estonia|latvia|lithuania|malta|cyprus|europe|eu)\b", re.I)
 
 
+BOARD_CHECK_KEYS = ("status", "checked_at", "title_match", "posted_at", "date_confirmed", "open_confirmed", "valid_through", "budget",
+                    "bids", "state_text", "end_customer", "checks")
+
+
+def apply_board_check(rec: RawRecord, chk: dict) -> RawRecord:
+    """Record what the board itself confirms. Removed -> rejected; closed -> source_state closed (excluded by the router)."""
+    status = chk.get("status")
+    if status == "removed":
+        raise Rejected("original post no longer exists (removed or hidden)")
+    rec.meta["board_check"] = {k: chk.get(k) for k in BOARD_CHECK_KEYS if chk.get(k) is not None}
+    rec.meta["verification_route"] = {"verified_open": "board re-read: title, date and open status confirmed by the source",
+                                      "verified_posted": "board re-read: title and date confirmed; availability not stated",
+                                      "reachable_unconfirmed": "board page reachable; details not confirmed",
+                                      "closed": "board re-read: closed at source",
+                                      "unreachable": "board page not reachable at check time"}.get(status, "board re-read")
+    if status == "closed":
+        rec.state = "closed"
+        rec.meta["source_closed"] = True
+    elif status == "verified_open":
+        rec.state = "open"
+    if chk.get("date_confirmed") and chk.get("posted_at"):
+        rec.created_at = chk["posted_at"]
+    if chk.get("requirements") and chk.get("title_match"):
+        rec.body = clean_text(chk["requirements"], limit=800)
+    if chk.get("budget"):
+        rec.meta["budget"] = str(chk["budget"])[:60]
+    return rec
+
+
 def verify_source(rec: RawRecord, fetch=None, fetch_freelancer=None, fetch_board=None) -> RawRecord:
     """Re-read the ORIGINAL post through the publisher's official API where one exists (approved Discourse forums, GitHub).
     On success the record carries the source's own title/date/text and verification 'api_verified' — no manual click needed.
@@ -213,13 +242,8 @@ def verify_source(rec: RawRecord, fetch=None, fetch_freelancer=None, fetch_board
                 rec.verification = "api_verified"
                 rec.meta.update(verification_route="Discourse topic API (original forum)", source_closed=bool(t.get("closed")))
         elif host in boards_reader.BOARD_HOSTS and rec.meta.get("board_listing"):
-            t = (fetch_board or boards_reader.fetch_listing)(rec.url)
-            if t is None:
-                raise Rejected("original post no longer exists (removed or hidden)")
-            if t.get("closed"):
-                rec.state = "closed"
-                rec.meta["source_closed"] = True
-            rec.meta.update(verification_route="listing re-read automatically from the public board")
+            chk = (fetch_board or boards_reader.check_listing)(rec.url, rec.title)
+            apply_board_check(rec, chk)
         elif rec.source_key == "freelancer_com" and str(rec.meta.get("api_id") or "").isdigit():
             from . import freelancer_feed
             p = (fetch_freelancer or freelancer_feed.get_project)(int(rec.meta["api_id"]))
@@ -285,6 +309,40 @@ def merge_claude(a, c: dict):
     return a
 
 
+PLATFORM_NAMES = {"eu_freelance_boards": None, "peopleperhour": "PeoplePerHour", "freelancer_com": "Freelancer.com", "upwork": "Upwork",
+                  "malt": "Malt", "n8n_community": "the n8n community forum", "make_community": "the Make community forum",
+                  "zapier_community": "the Zapier community", "github_issues": "GitHub"}
+INVITED = re.compile(r"\b(dm me|message me|email me|e-mail me|contact me|send (me )?(your|a) (portfolio|cv|proposal|quote)|reach out|get in touch|"
+                     r"pm me|write to me|contactez[- ]moi|schreiben sie mir|melden sie sich)\b", re.I)
+
+
+def _platform_label(rec: RawRecord) -> str:
+    host = (urlsplit(rec.url).hostname or "").lower().removeprefix("www.").removeprefix("community.")
+    return PLATFORM_NAMES.get(rec.source_key) or {"freelancermap.de": "freelancermap", "codeur.com": "Codeur", "airtable.com": "the Airtable community"}.get(host, host)
+
+
+def next_action(it: dict, rec: RawRecord, c: dict) -> dict:
+    """One concrete next step per lead. Contact details are never extracted; only the route the source permits is named."""
+    where, pipe = _platform_label(rec), it.get("pipeline")
+    text = f"{rec.title} {rec.body}"
+    if pipe == "EXCLUDED" or rec.state == "closed":
+        return {"type": "none", "label": "No action: closed or excluded at source", "where": where}
+    if pipe == "F_RECRUITMENT_SIGNAL":
+        return {"type": "research", "where": where,
+                "label": "Employment signal: research the company; consider offering a delivered project instead of a hire"}
+    if rec.verification == "search_snippet_only":
+        return {"type": "research", "where": where, "label": "Research further: open the original, confirm it is a genuine current request before any contact"}
+    if pipe in ("B_FREELANCE_PROJECT", "GLOBAL_REVIEW") and (c.get("kind") == "marketplace" or c.get("board_listing") or rec.source_key in PLATFORM_NAMES):
+        bids = ((c.get("facts") or {}).get("bid_count"))
+        crowd = f" ({bids} offers so far)" if isinstance(bids, int) else ""
+        return {"type": "submit_proposal", "where": where, "label": f"Submit a proposal on {where}{crowd}; contact stays in-platform"}
+    if INVITED.search(text):
+        return {"type": "contact_permitted", "where": where, "label": f"Contact through the channel the poster invited on {where} (see the original post)"}
+    if pipe in ("A_DIRECT_SME", "C_AGENCY_PARTNER", "D_OPERATIONAL_PAIN"):
+        return {"type": "reply_publicly", "where": where, "label": f"Reply publicly in the thread on {where}, following its rules on solicitation"}
+    return {"type": "research", "where": where, "label": "Research further before any contact"}
+
+
 def _age_days(created: Optional[str], now: datetime) -> Optional[int]:
     if not created:
         return None
@@ -316,6 +374,10 @@ def process(cands: list[dict], now: Optional[datetime] = None, verify: bool = Fa
             except Rejected as exc:
                 rejected[str(exc)] += 1
                 continue
+        bc = rec.meta.get("board_check") or {}
+        if bc:
+            c = dict(c, budget=bc.get("budget") or c.get("budget"),
+                     facts=dict(c.get("facts") or {}, bid_count=bc.get("bids") if bc.get("bids") is not None else (c.get("facts") or {}).get("bid_count")))
         opp = build(rec, merge_claude(assess(rec, now=now), c))
         it = to_item(opp)
         q = c.get("qualification") or {}
@@ -344,8 +406,11 @@ def process(cands: list[dict], now: Optional[datetime] = None, verify: bool = Fa
             it["rank_score"] = max(0, min(100, it["rank_score"] + adj))
         bids = ((c.get("facts") or {}).get("bid_count"))
         if isinstance(bids, int) and bids >= 50:
-            it["rank_score"] = max(0, it["rank_score"] - 5)      # crowded marketplace project: lower realistic win chance
+            # crowded marketplace project: lower realistic win chance
+            it["rank_score"] = max(0, it["rank_score"] - (10 if bids >= 100 else 5))
             it["meta"]["crowded"] = bids
+        if bc.get("status") == "verified_open":
+            it["rank_score"] = min(100, it["rank_score"] + 4)
         age = _age_days(rec.created_at, now)
         it["meta"]["age_days"] = age
         if it["pipeline"] != "EXCLUDED":
@@ -358,6 +423,8 @@ def process(cands: list[dict], now: Optional[datetime] = None, verify: bool = Fa
                 it["priority"] = "C" if it["priority"] in ("A", "B") else it["priority"]
             elif age > 7 and it["priority"] == "A":
                 it["priority"] = "B"
+        act = next_action(it, rec, c)
+        it["meta"]["action"], it["meta"]["next_action"] = act, act["label"]
         it["org_type"] = biz_type or it.get("org_type")
         it["engine_version"] = ENGINE
         it["engine"] = "llm"
