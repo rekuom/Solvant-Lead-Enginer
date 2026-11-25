@@ -9,6 +9,7 @@ Reading is limited to what the boards publish openly. Proposals happen in-platfo
 agent_ingest format; nothing is stored here.
 
   python -m signal_engine.discovery.platform.boards_reader latest --days 7 [--out out/agent/boards-YYYYMMDD.json]
+  python -m signal_engine.discovery.platform.boards_reader recheck [--limit 40]   # re-verify open board leads already saved
 """
 from __future__ import annotations
 
@@ -264,20 +265,171 @@ def airtable_jobs(days: int, get: Callable[[str], str] = _get, now: Optional[dat
 
 # ------------------------------------------------------------------ verification (re-read one listing)
 BOARD_HOSTS = {"www.freelancermap.de", "www.codeur.com", "www.peopleperhour.com", "community.airtable.com"}
+# Levels, strongest first. Only "verified_open" means the source itself states the opportunity is open now.
+STATUSES = ("verified_open", "verified_posted", "reachable_unconfirmed", "closed", "removed", "unreachable")
+_FR_MONTHS = {m: i + 1 for i, m in enumerate(["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
+                                              "octobre", "novembre", "décembre"])}
+_CLOSED = re.compile(r"(Projet (fermé|clôturé|terminé|attribué)|Ce projet est (fermé|clôturé)|Projekt (ist )?(nicht mehr verfügbar|beendet|"
+                     r"abgelaufen|vergeben)|Bewerbungen (sind )?pausiert|This (job|project) (is|has been) (closed|awarded|cancelled)|"
+                     r"Project (Closed|Awarded|Cancelled)|no longer (available|accepting))", re.I)
 
 
-def fetch_listing(url: str, get: Callable[[str], str] = _get) -> Optional[dict]:
-    """Re-read a single listing page. Returns {"title", "closed"} or None when the listing no longer exists."""
+def _plain(page: str) -> str:
+    t = re.sub(r"<script.*?</script>|<style.*?</style>", " ", page, flags=re.S)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", t))).strip()
+
+
+def _jobposting(page: str) -> dict:
+    for raw in re.findall(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', page, re.S):
+        try:
+            d = json.loads(raw.strip())
+        except ValueError:
+            continue
+        for x in (d if isinstance(d, list) else d.get("@graph", [d]) if isinstance(d, dict) else []):
+            if isinstance(x, dict) and x.get("@type") == "JobPosting":
+                return x
+    return {}
+
+
+def _words(t: str) -> set:
+    return {w for w in re.findall(r"[a-z0-9à-ÿ]{3,}", (t or "").lower())}
+
+
+def title_matches(expected: Optional[str], found: Optional[str]) -> bool:
+    a, b = _words(expected or ""), _words(found or "")
+    if not a or not b:
+        return False
+    return len(a & b) / max(1, min(len(a), len(b))) >= 0.6
+
+
+def _iso(d: Optional[str]) -> Optional[str]:
+    if not d:
+        return None
+    m = re.match(r"(\d{4}-\d{2}-\d{2})", str(d))
+    return m.group(1) if m else None
+
+
+def _parse_codeur(page: str, text: str) -> dict:
+    r: dict = {}
+    m = re.search(r"\b(Ouvert|Fermé|Clôturé|Terminé|Attribué|En cours|Annulé)\s*·", text)
+    if m:
+        r["open"] = m.group(1) == "Ouvert"
+        r["state_text"] = m.group(1)
+    m = re.search(r"Publication\s*:\s*(\d{1,2})\s+([a-zéû]+)\s+(\d{4})", text, re.I)
+    if m and m.group(2).lower() in _FR_MONTHS:
+        r["posted_at"] = f"{int(m.group(3)):04d}-{_FR_MONTHS[m.group(2).lower()]:02d}-{int(m.group(1)):02d}"
+    m = re.search(r"Budget indicatif\s*:\s*(.+?)\s+Publication", text)
+    r["budget"] = m.group(1).strip()[:60] if m else None
+    m = re.search(r"(\d+)\s+offres", text)
+    r["bids"] = int(m.group(1)) if m else None
+    m = re.search(r"Publier un projet similaire\s+(?:p:last-child\]:mb-0\">\s*)?(.+?)\s+(?:\.detail:last-child\]:mb-8\">\s*)?Budget indicatif", text)
+    r["requirements"] = m.group(1)[:700] if m else None
+    m = re.search(r"Profils recherchés\s*:\s*(.+?)(?:\s{2,}|Compétences|$)", text)
+    r["wanted"] = m.group(1)[:200] if m else None
+    return r
+
+
+def _parse_pph(page: str, text: str) -> dict:
+    jp, r = _jobposting(page), {}
+    r["posted_at"], r["valid_through"] = _iso(jp.get("datePosted")), _iso(jp.get("validThrough"))
+    r["title"] = html.unescape(jp.get("title") or "") or None
+    if re.search(r"Open for Proposals", text):
+        r["open"], r["state_text"] = True, "Open for Proposals"
+    m = re.search(r"(Fixed Price|Hourly Rate)\s*([£$€])\s*([\d,.]+[kK]?)", text)
+    r["budget"] = f"{m.group(2)}{m.group(3)} ({m.group(1).lower()})" if m else None
+    m = re.search(r"Proposals:\s*(\d+)", text)
+    r["bids"] = int(m.group(1)) if m else None
+    m = re.search(r"Description\s+(?:Experience Level:\s*\w+\s+)?(.+?)\s+(?:Clarification Board|Login to your account|New Proposal)", text)
+    r["requirements"] = (m.group(1) if m else _text(jp.get("description") or ""))[:700] or None
+    return r
+
+
+def _parse_freelancermap(page: str, text: str) -> dict:
+    jp, r = _jobposting(page), {}
+    r["posted_at"], r["valid_through"] = _iso(jp.get("datePosted")), _iso(jp.get("validThrough"))
+    r["title"] = jp.get("title")
+    if re.search(r"\bBewerben\b", text) and not _CLOSED.search(text):
+        r["open"], r["state_text"] = True, "Bewerben (applications open)"
+    r["end_customer"] = "Endkundenprojekt" in text
+    m = re.search(r"Beschreibung\s+(.+?)\s+(?:Ähnliche Projekte|Projekt-Ansprechpartner|Kontakt|Freelancer finden)", text)
+    r["requirements"] = (m.group(1) if m else _text(jp.get("description") or ""))[:700] or None
+    return r
+
+
+def _parse_airtable(page: str, text: str) -> dict:
+    m = re.search(r'"publishedAt"\s*:\s*"([^"]+)"', html.unescape(page))
+    return {"posted_at": _iso(m.group(1)) if m else None}
+
+
+def check_listing(url: str, expected_title: Optional[str] = None, get: Callable[[str], str] = _get,
+                  now: Optional[datetime] = None) -> dict:
+    """Re-read one listing and report what the SOURCE itself confirms: reachable, title, posting date, open status, budget, bids,
+    requirements. 'verified_open' only when the page is reachable, the title matches and the board states the project is open
+    (and any stated expiry date has not passed). A reachable page without an explicit open status is never called verified."""
+    now = now or datetime.now(timezone.utc)
+    out = {"url": url, "checked_at": now.isoformat(timespec="seconds"), "reachable": False, "title": None, "title_match": False,
+           "posted_at": None, "date_confirmed": False, "open_confirmed": False, "valid_through": None, "budget": None, "bids": None,
+           "requirements": None, "status": "unreachable", "checks": []}
     try:
         page = get(url)
     except FetchError as exc:
         if str(exc) in ("HTTP 404", "HTTP 410"):
-            return None
-        raise
-    t = re.search(r'<meta property="og:title" content="([^"]+)"', page) or re.search(r"<title>([^<]+)</title>", page)
-    closed = bool(re.search(r"(Projet (fermé|clôturé)|Ce projet est fermé|Projekt (ist )?(nicht mehr verfügbar|beendet|abgelaufen)|"
-                            r"This job is (closed|no longer available)|Job (closed|expired))", page, re.I))
-    return {"title": html.unescape(t.group(1)).strip() if t else None, "closed": closed}
+            out.update(status="removed", checks=["listing no longer exists (HTTP 404/410)"])
+        else:
+            out["checks"].append(f"not reachable ({exc})")
+        return out
+    except Exception as exc:   # network errors: never fatal, never 'verified'
+        out["checks"].append(f"not reachable ({type(exc).__name__})")
+        return out
+    out["reachable"] = True
+    text = _plain(page)
+    t = re.search(r'<meta property="og:title" content="([^"]+)"', page) or re.search(r"<title[^>]*>([^<]+)</title>", page)
+    title = html.unescape(t.group(1)).strip() if t else None
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    parsed = {"www.codeur.com": _parse_codeur, "www.peopleperhour.com": _parse_pph, "www.freelancermap.de": _parse_freelancermap,
+              "community.airtable.com": _parse_airtable}.get(host, lambda p, x: {})(page, text)
+    title = parsed.pop("title", None) or title
+    if title:
+        title = re.sub(r"\s*(-|\|)\s*PeoplePerHour.*$|\s+auf www\.freelancermap\.de$", "", title).strip()
+    out["title"] = title
+    out["title_match"] = title_matches(expected_title, title) if expected_title else bool(title)
+    out["posted_at"] = parsed.get("posted_at")
+    out["date_confirmed"] = bool(out["posted_at"])
+    out["valid_through"] = parsed.get("valid_through")
+    for k in ("budget", "bids", "requirements"):
+        out[k] = parsed.get(k)
+    for k in ("state_text", "wanted", "end_customer"):
+        if parsed.get(k) is not None:
+            out[k] = parsed[k]
+    expired = bool(out["valid_through"] and out["valid_through"] < now.date().isoformat())
+    closed = parsed.get("open") is False or bool(_CLOSED.search(text)) or expired
+    out["open_confirmed"] = bool(parsed.get("open")) and not closed
+    checks = ["page reachable"]
+    checks.append("title matches the lead" if out["title_match"] else "title differs from the lead")
+    checks.append(f"posted {out['posted_at']} (stated by the board)" if out["date_confirmed"] else "posting date not stated on the page")
+    if closed:
+        checks.append("board shows the project as closed" + (" (expired)" if expired else ""))
+        out["status"] = "closed"
+    elif out["open_confirmed"] and out["title_match"]:
+        checks.append(f"board states it is open ({parsed.get('state_text')})")
+        out["status"] = "verified_open"
+    elif out["title_match"] and out["date_confirmed"]:
+        checks.append("availability not stated by the source")
+        out["status"] = "verified_posted"
+    else:
+        out["status"] = "reachable_unconfirmed"
+    out["checks"] = checks
+    return out
+
+
+def fetch_listing(url: str, get: Callable[[str], str] = _get) -> Optional[dict]:
+    """Backward-compatible wrapper: None when removed; otherwise {"title", "closed"}."""
+    c = check_listing(url, get=get)
+    if c["status"] == "removed":
+        return None
+    if c["status"] == "unreachable":
+        raise FetchError("unreachable")
+    return {"title": c["title"], "closed": c["status"] == "closed"}
 
 
 SOURCES = {"freelancermap": freelancermap, "codeur": codeur, "peopleperhour": peopleperhour, "airtable": airtable_jobs}
@@ -298,8 +450,29 @@ def latest(days: int = 7, only: Optional[list[str]] = None) -> tuple[list[dict],
     return uniq, stats
 
 
+def recheck(limit: int = 40, get: Callable[[str], str] = _get, rpc_fn=None, delay: float = DELAY_S) -> dict:
+    """Re-verify saved board leads that are still open: what the board states today (open / closed / removed). Counts only."""
+    if rpc_fn is None:
+        from .rest import rpc as rpc_fn
+    due = rpc_fn("board_checks_due", {"p_token": os.environ.get("SIGNAL_INGEST_TOKEN", ""), "p_limit": limit}) or []
+    checks = []
+    for d in due:
+        c = check_listing(d["url"], d.get("title"), get=get)
+        checks.append({k: v for k, v in c.items() if k != "requirements"})
+        time.sleep(delay)
+    res = rpc_fn("record_board_checks", {"p_token": os.environ.get("SIGNAL_INGEST_TOKEN", ""), "p_checks": checks}) if checks else {}
+    by = {}
+    for c in checks:
+        by[c["status"]] = by.get(c["status"], 0) + 1
+    return {"checked": len(checks), "by_status": by, "database": res}
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "recheck":
+        limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 40
+        print(json.dumps(recheck(limit)))
+        return 0
     if not argv or argv[0] != "latest":
         print(__doc__)
         return 2

@@ -125,6 +125,52 @@ select set_config('request.headers', '', false);
 set role anon;
 select pg_temp.expect_error('select solvant.discovery_feedback()', 'feedback needs a valid token');
 select pg_temp.expect_error($q$select solvant.log_searches('', '[{"strategy":"x","query":"y"}]')$q$, 'search log needs a valid token');
+
+-- 4b. commercial actionability: board re-checks, Claude proposal drafts, sales funnel ----------------------------------------
+select solvant.ingest_records((select v from t_codes where k = 'ingest'), '{"scope":"discovery","mode":"agent"}',
+  '[{"source_key":"eu_freelance_boards","url":"https://www.codeur.com/projects/1-agent-ia-devis","title":"Agent IA pour les devis","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"A","engine":"llm","meta":{"discovered_by":"claude_agent","board_listing":true,"action":{"type":"submit_proposal","label":"Submit a proposal on Codeur","where":"Codeur"}}},
+    {"source_key":"eu_freelance_boards","url":"https://www.codeur.com/projects/2-integration-crm","title":"Intégration CRM","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"B","engine":"llm","meta":{"discovered_by":"claude_agent","board_listing":true,"action":{"type":"submit_proposal","label":"Submit a proposal on Codeur","where":"Codeur"}}}]');
+select set_config('request.headers', json_build_object('x-signal-token', (select v from t_codes where k = 'ingest'))::text, false);
+set role anon;
+select pg_temp.check(jsonb_array_length(solvant.board_checks_due('', 40)) = 2, 'board re-check: open board listings are due');
+select pg_temp.check((solvant.record_board_checks('', '[{"url":"https://www.codeur.com/projects/1-agent-ia-devis","status":"verified_open","posted_at":"2026-11-20","bids":12,"checks":["page reachable"]},
+                                                        {"url":"https://www.codeur.com/projects/2-integration-crm","status":"closed","checks":["closed"]},
+                                                        {"url":"https://community.make.com/t/looking-for-make-dev/1","status":"closed"}]') ->> 'recorded')::int = 2,
+                     'board re-check: only board listings are updated');
+select pg_temp.check(jsonb_array_length(solvant.board_checks_due('', 40)) = 1, 'closed listings are no longer re-checked');
+select solvant.ingest_records('', '{"scope":"discovery","mode":"agent"}',
+  '[{"source_key":"eu_freelance_boards","url":"https://www.codeur.com/projects/3-legacy","title":"Ancien projet","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"B","engine":"llm","meta":{"discovered_by":"claude_agent","board_listing":true}}]');
+select solvant.record_board_checks('', '[{"url":"https://www.codeur.com/projects/3-legacy","status":"verified_open"}]');
+select pg_temp.check((solvant.save_proposal_drafts('', '[{"url":"https://www.codeur.com/projects/1-agent-ia-devis","title":"Agent IA devis","body":"Bonjour, ...","amount":"1800","currency":"EUR"},
+                                                         {"url":"https://example.invalid/none","body":"x"}]') ->> 'added')::int = 1, 'proposal draft saved for a known lead only');
+select pg_temp.check((solvant.save_proposal_drafts('', '[{"url":"https://www.codeur.com/projects/1-agent-ia-devis","body":"Bonjour, version 2"}]') ->> 'updated')::int = 1,
+                     'a second draft updates the existing Claude draft');
+select pg_temp.check(solvant.commercial_shortlist('', 10) @> '[{"title":"Agent IA pour les devis","draft_ready":true}]'::jsonb
+                     and position('2-integration-crm' in solvant.commercial_shortlist('', 10)::text) = 0, 'shortlist: open with draft; closed excluded');
+select pg_temp.check((solvant.funnel_for_report('') ->> 'drafts_ready')::int = 1, 'report funnel: counts via discovery token');
+reset role;
+select set_config('request.headers', '', false);
+set role anon;
+select pg_temp.expect_error($q$select solvant.save_proposal_drafts('', '[]')$q$, 'proposal drafts need a valid token');
+select pg_temp.expect_error($q$select solvant.board_checks_due('', 5)$q$, 'board checks need a valid token');
+select pg_temp.expect_error($q$select solvant.commercial_shortlist('', 5)$q$, 'shortlist needs a valid token');
+select pg_temp.expect_error($q$select solvant.sales_funnel()$q$, 'anon cannot read the sales funnel');
+reset role;
+select pg_temp.check((select source_state from solvant.opportunities where url = 'https://www.codeur.com/projects/2-integration-crm') = 'closed'
+                     and (select meta -> 'action' ->> 'type' from solvant.opportunities where url = 'https://www.codeur.com/projects/2-integration-crm') = 'none',
+                     'closed listing: source state closed and next step set to no action');
+select pg_temp.check((select count(*) from solvant.proposals where origin = 'claude_draft' and status = 'draft' and body = 'Bonjour, version 2') = 1,
+                     'one Claude draft per opportunity, never sent');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.check((solvant.sales_funnel() ->> 'open_now')::int >= 1 and (solvant.sales_funnel() ->> 'verified_open')::int >= 1
+                     and (solvant.sales_funnel() ->> 'drafts_ready')::int = 1 and (solvant.sales_funnel() ->> 'proposal_possible')::int >= 1
+                     and (solvant.sales_funnel() ->> 'proposals_submitted')::int = 0, 'sales funnel separates open, drafted and submitted');
+reset role;
+
+select pg_temp.check((select meta -> 'action' ->> 'type' from solvant.opportunities where url = 'https://www.codeur.com/projects/3-legacy') = 'submit_proposal',
+                     'legacy open board lead gets a proposal next step on re-check');
+delete from solvant.opportunities where url like 'https://www.codeur.com/projects/%';   -- keep later counts stable
+
 reset role;
 
 -- 5. viewer / editor permissions ------------------------------------------------------------------------

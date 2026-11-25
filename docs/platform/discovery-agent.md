@@ -49,6 +49,12 @@ Set this once for the commands below: `export SUPABASE_URL=https://dfnaevcsergsp
    - repeat and vary queries with `qualified > 0`, especially where `progressed_by_human` or `won` is above zero;
    - drop queries with `total ≥ 5` and `qualified = 0`;
    - treat `corrected_by_human` as a warning that you're mis-qualifying a pattern.
+2b. **Re-check live board leads.** Run `python -m signal_engine.discovery.platform.boards_reader recheck --limit 40`. It re-reads each saved board lead that is still open and records what the board states today. A page that merely loads is never treated as verified. The statuses are:
+   - `verified_open`: the title, posting date and open status are all confirmed by the source;
+   - `verified_posted`: the title and date are confirmed, but the source doesn't state availability;
+   - `reachable_unconfirmed`: the page loads, but nothing could be confirmed;
+   - `closed` or `removed`: the next step becomes "no action" and the lead drops off the best-opportunities list;
+   - `unreachable`: the page couldn't be loaded at check time.
 3. **Public project boards (main volume).** Run `python -m signal_engine.discovery.platform.boards_reader latest --days 7 --out out/agent/boards-YYYYMMDD.json`. It reads freelancermap (end-customer projects; recruiter postings come out as `employment`), Codeur (open projects), PeoplePerHour (technology and AI lists) and the Airtable community Jobs Board. It already drops stale, closed, off-topic, seller and non-fit roles (teachers, sales, admin, SEO, design…). Read every remaining listing and add a `qualification` (intent, relevance, score, reason, service) plus `business.type` and `business.country` when stated. Lower the score of vague, very-low-budget or crowded (100+ offers) projects, and drop the clearly unsuitable. Keep `kind`, `board_listing` and `facts` unchanged. A PeoplePerHour card price is not the budget when the text says "open to proposals": set `budget` to null then.
 4. **Forum feed: hiring posts from the last 7 days** (kept running, not expanded). Run `python -m signal_engine.discovery.platform.forum_reader latest --days 7`. It covers the hiring sections of Make, n8n, Bubble, WeWeb, Activepieces and Latenode, and already drops sellers, unpaid, commission-only and internship posts. Each topic has a `kind`: `project_or_partner` or `employment`. Read the remaining topics with `forum_reader thread <urls…>` (at most 25).
 5. **Breadth: about 20 searches** using the `WebSearch` tool (`mode: standard`), allocated by today's search plan across the strategies in the search set below. Prefer results from the last 7 days and skip undated marketplace results. **Never search Reddit or Threads**: they block Anthropic's crawler, and the block must not be worked around.
@@ -81,7 +87,20 @@ Set this once for the commands below: `export SUPABASE_URL=https://dfnaevcsergsp
      - Crowding: marketplace projects with 50 or more bids lose points.
    - **Pipelines stay separate:** customers → A (direct SME); marketplace → B; partners → C; employment → F.
    - The ingest token is injected by the session's network proxy. Never print it.
-10. Report counts only: candidates; accepted; priority A, B and C; customer, marketplace, partner and employment counts; board counts per source; searches run per strategy and how many produced a kept candidate; how many were verified automatically; rejected and why; and which queries produced qualified leads.
+10. **Proposal drafts** for every live **priority A** lead that has a proposal route and no draft yet, plus strong B leads with a realistic chance of winning. Write them to `out/agent/drafts-YYYYMMDD.json` as `[{"url", "title", "body", "amount", "currency"}]`, then run `python -m signal_engine.discovery.platform.commercial drafts out/agent/drafts-YYYYMMDD.json`. Drafts are stored privately in the database and shown on the lead page. **They are never submitted automatically:** the owner edits and submits them on the platform, then clicks "I submitted this". Rules for each draft:
+    - Use the listing's language. Keep it to 120–220 words.
+    - Open with their actual problem, in their terms. Propose a concrete approach and deliverables, then a realistic timeline.
+    - Give a price within the stated budget when one is stated, otherwise leave `amount` empty. End with 2–3 sharp questions that show understanding.
+    - **Never** invent case studies, clients, numbers, certifications or reviews. Never include contact details, links or anything that moves contact off-platform.
+    - Make no promises Solvant can't keep. Say "Solvant" and keep the voice factual.
+11. Run `python -m signal_engine.discovery.platform.commercial report --limit 8` for the shortlist and funnel.
+12. **Final message: the daily commercial report**, short and commercial, never a technical log. Use this format:
+    - **Funnel:** open opportunities → proposal possible → drafts ready → submitted → replies → meetings → won.
+    - **Best opportunities today (up to 5):** for each, the title, buyer type and country, budget, offers so far, whether it is confirmed open, the exact next step and whether a draft is ready.
+    - **Changes since yesterday:** new A/B leads, and leads that closed.
+    - **Needs you:** only decisions or submissions the owner must make.
+    - One line on discovery volume: boards and forums read, searches run, and leads kept.
+13. Technical counts for the run log only: candidates; accepted; priority A, B and C; customer, marketplace, partner and employment counts; board counts per source; searches run per strategy and how many produced a kept candidate; how many were verified automatically; rejected and why; and which queries produced qualified leads.
 
 **Measured yields (2026-11-19 experiments):**
 

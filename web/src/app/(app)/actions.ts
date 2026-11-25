@@ -126,6 +126,22 @@ export async function addProposal(form: FormData) {
   revalidatePath(`/opportunities/${id(form)}`);
 }
 
+/** The human submitted a (possibly edited) draft on the platform: record it. The platform itself never sends anything. */
+export async function markProposalSubmitted(form: FormData) {
+  const supabase = await createClient();
+  const proposalId = id(form, "proposal");
+  const opp = id(form);
+  const { error } = await supabase.from("proposals").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", proposalId).eq("status", "draft");
+  if (error) throw new Error(error.message);
+  const { data: o } = await supabase.from("opportunities").select("stage").eq("id", opp).maybeSingle();
+  if (o && ["discovered", "needs_review", "verified", "qualified", "contact_planned", "contacted", "replied", "meeting_scheduled"].includes(o.stage)) {
+    await supabase.from("opportunities").update({ stage: "proposal_sent" }).eq("id", opp);
+  }
+  await supabase.from("activities").insert({ opportunity_id: opp, kind: "proposal", summary: "Proposal submitted on the platform" });
+  revalidatePath(`/opportunities/${opp}`);
+  revalidatePath("/");
+}
+
 export async function addContactChannel(form: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.from("contact_channels").insert({
