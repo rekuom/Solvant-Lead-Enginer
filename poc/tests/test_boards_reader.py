@@ -182,6 +182,13 @@ class ListingCheck(unittest.TestCase):
                             get=lambda u: self.CD.replace("Ouvert ·", "· "), now=NOW)
         self.assertEqual(c["status"], "verified_posted")    # title + date confirmed, availability not stated
 
+    def test_in_progress_archived_and_hourly(self):
+        self.assertEqual(b.check_listing("https://www.codeur.com/projects/1-x", "Automatiser la facturation",
+                                         get=lambda u: self.CD.replace("Ouvert", "En travail"), now=NOW)["status"], "closed")
+        arch = self.PPH.replace("OPPORTUNITY Open for Proposals", "Remote #4531536 Archived").replace("Fixed Price £ 300", "Per Hour £ 20 /hr")
+        c = b.check_listing("https://www.peopleperhour.com/x-1", "Zapier workflows for clinic", get=lambda u: arch, now=NOW)
+        self.assertEqual((c["status"], c["budget"]), ("closed", "£20/hour"))
+
     def test_closed_expired_removed_unreachable(self):
         self.assertEqual(b.check_listing("https://www.codeur.com/projects/1-x", "Automatiser la facturation",
                                          get=lambda u: self.CD.replace("Ouvert", "Fermé"), now=NOW)["status"], "closed")
