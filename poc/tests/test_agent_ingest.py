@@ -7,6 +7,8 @@ import unittest
 from signal_engine.discovery.platform import agent_ingest as ai
 
 NOW_ISO = "2026-11-15T10:00:00+00:00"
+from datetime import datetime as _dt
+FIXED_NOW = _dt.fromisoformat("2026-11-16T10:00:00+00:00")   # fixtures stay "fresh" regardless of the real date
 
 
 def cand(**over):
@@ -22,7 +24,7 @@ def cand(**over):
 
 class AgentGate(unittest.TestCase):
     def run_one(self, **over):
-        items, rej = ai.process([cand(**over)])
+        items, rej = ai.process([cand(**over)], now=FIXED_NOW)
         return (items[0] if items else None), rej
 
     def test_forum_hiring_post_read_on_page_is_priority_a(self):
@@ -56,7 +58,7 @@ class AgentGate(unittest.TestCase):
             dict(title="SYNTHETIC FIXTURE need help"),
         ]
         for b in bad:
-            items, rej = ai.process([cand(**b)])
+            items, rej = ai.process([cand(**b)], now=FIXED_NOW)
             self.assertEqual(items, [], b)
             self.assertTrue(rej, b)
 
@@ -108,9 +110,9 @@ class AgentGate(unittest.TestCase):
 class PriorityFromScore(unittest.TestCase):
     def test_tiny_jobs_and_vague_requests_are_not_priority_a(self):
         items, _ = ai.process([cand(budget="$25", qualification={"intent": "explicit_hire_request", "relevance": "relevant", "score": 20,
-                                                                  "reason": "very small quick fix"})])
+                                                                  "reason": "very small quick fix"})], now=FIXED_NOW)
         self.assertNotEqual(items[0]["priority"], "A")
-        items, _ = ai.process([cand(qualification={"intent": "explicit_hire_request", "relevance": "relevant", "score": 95, "reason": "clear paid scope"})])
+        items, _ = ai.process([cand(qualification={"intent": "explicit_hire_request", "relevance": "relevant", "score": 95, "reason": "clear paid scope"})], now=FIXED_NOW)
         self.assertEqual(items[0]["priority"], "A")
 
 

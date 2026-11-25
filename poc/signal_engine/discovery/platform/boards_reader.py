@@ -55,6 +55,9 @@ class FetchError(RuntimeError):
 def _get(url: str, timeout: int = 25) -> str:
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
+            final = urllib.parse.urlsplit(r.geturl())
+            if final.path in ("", "/") and urllib.parse.urlsplit(url).path not in ("", "/"):
+                raise FetchError("HTTP 410")      # a listing that now redirects to the site's home page has been removed
             return r.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         raise FetchError(f"HTTP {exc.code}") from exc
@@ -311,7 +314,7 @@ def _iso(d: Optional[str]) -> Optional[str]:
 
 def _parse_codeur(page: str, text: str) -> dict:
     r: dict = {}
-    m = re.search(r"\b(Ouvert|Fermé|Clôturé|Terminé|Attribué|En cours|Annulé)\s*·", text)
+    m = re.search(r"\b(Ouvert|Fermé|Clôturé|Terminé|Attribué|En cours|En travail|Annulé)\s*·", text)
     if m:
         r["open"] = m.group(1) == "Ouvert"
         r["state_text"] = m.group(1)
@@ -333,10 +336,13 @@ def _parse_pph(page: str, text: str) -> dict:
     jp, r = _jobposting(page), {}
     r["posted_at"], r["valid_through"] = _iso(jp.get("datePosted")), _iso(jp.get("validThrough"))
     r["title"] = html.unescape(jp.get("title") or "") or None
-    if re.search(r"Open for Proposals", text):
+    m = re.search(r"#\d{5,}\s+(Archived|Closed|Awarded|Cancelled|Expired|OPPORTUNITY Open for Proposals)", text)
+    if m:
+        r["open"], r["state_text"] = m.group(1).endswith("Open for Proposals"), m.group(1).replace("OPPORTUNITY ", "")
+    elif re.search(r"Open for Proposals", text):
         r["open"], r["state_text"] = True, "Open for Proposals"
-    m = re.search(r"(Fixed Price|Hourly Rate)\s*([£$€])\s*([\d,.]+[kK]?)", text)
-    r["budget"] = f"{m.group(2)}{m.group(3)} ({m.group(1).lower()})" if m else None
+    m = re.search(r"(Fixed Price|Hourly Rate|Per Hour)\s*([£$€])\s*([\d,.]+[kK]?)", text)
+    r["budget"] = (f"{m.group(2)}{m.group(3)}" + ("/hour" if m.group(1) != "Fixed Price" else " (fixed price)")) if m else None
     m = re.search(r"Proposals:\s*(\d+)", text)
     r["bids"] = int(m.group(1)) if m else None
     m = re.search(r"Description\s+(?:Experience Level:\s*\w+\s+)?(.+?)\s+(?:Clarification Board|Login to your account|New Proposal)", text)
@@ -391,7 +397,7 @@ def check_listing(url: str, expected_title: Optional[str] = None, get: Callable[
     title = parsed.pop("title", None) or title
     if title:
         title = re.sub(r"\s*(-|\|)\s*PeoplePerHour.*$|\s+auf www\.freelancermap\.de$", "", title).strip()
-    out["title"] = title
+    out["title"] = html.unescape(title) if title else title
     out["title_match"] = title_matches(expected_title, title) if expected_title else bool(title)
     out["posted_at"] = parsed.get("posted_at")
     out["date_confirmed"] = bool(out["posted_at"])
