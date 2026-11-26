@@ -87,7 +87,9 @@ class Parsers(unittest.TestCase):
                 + pph_card(u.replace("1234567", "7654321"), "3D artist wanted", "$100", "Render.", "a day ago", 3))
         out = b.parse_pph(page, NOW, 7)
         self.assertEqual(len(out), 1)
-        self.assertEqual((out[0]["title"], out[0]["budget"], out[0]["facts"]["bid_count"]), ("Workflow Automation: Zapier & Xero", "£450", 14))
+        # the card price is a viewer-currency conversion: kept only as a hint, never as the buyer's budget
+        self.assertEqual((out[0]["title"], out[0]["budget"], out[0]["facts"]["bid_count"]), ("Workflow Automation: Zapier & Xero", None, 14))
+        self.assertEqual(out[0]["facts"]["card_price_viewer_currency"], "£450")
 
     def test_gainsight_jobs_board_embedded_topics(self):
         topics = [{"categoryUrl": "https://community.airtable.com/jobs-board-16",
@@ -258,6 +260,24 @@ class Commercial(unittest.TestCase):
         self.assertIn("Next: Submit a proposal on PeoplePerHour", txt)
         self.assertIn("open (confirmed by board)", txt)
         self.assertIn("open now 5", txt)
+
+    def test_report_shows_original_budget_status_flags_and_change_sections(self):
+        from signal_engine.discovery.platform import commercial as cm
+        txt = cm.format_report(
+            [{"priority": "C", "title": "Gumroad to Airtable", "budget_text": "$1,000 (open to hearing what this should cost)", "commercial_score": 71,
+              "status_label": "requirement_stated", "next_step": "Reply in the thread", "url": "https://community.make.com/t/x/120066", "flags": []},
+             {"priority": "A", "title": "Scrape letting agents", "budget_text": "£363 (fixed price)", "bids": "84", "commercial_score": 61,
+              "status_label": "confirmed_open", "flags": ["heavily contested (84 offers)"], "next_step": "Submit a proposal", "url": "https://www.peopleperhour.com/x"}],
+            {"open_now": 2}, {"new_buyers": [{"title": "New one", "budget_text": None, "url": "https://x"}], "partners": [], "employment": []})
+        self.assertIn("1. 71 [C] Gumroad to Airtable", txt)
+        self.assertIn("$1,000 (open to hearing what this should cost) · no visible offers · requirement stated in a forum post", txt)
+        self.assertIn("£363 (fixed price) · 84 offers", txt)
+        self.assertIn("Review: heavily contested (84 offers)", txt)
+        self.assertIn("New buyers (1)\n   - New one · budget not stated · https://x", txt)
+        self.assertIn("Updated leads (0): none", txt)
+        self.assertIn("Agency partnerships (0): none", txt)
+        self.assertIn("Employment signals (0): none", txt)
+        self.assertNotIn("$474", txt)
 
     def test_recheck_sends_counts_not_requirements(self):
         sent = {}

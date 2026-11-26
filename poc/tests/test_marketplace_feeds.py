@@ -159,6 +159,9 @@ class Ranking(unittest.TestCase):
         self.assertAlmostEqual(ai.budget_gbp("€5k"), 4250)
         self.assertEqual(ai.budget_gbp("£25/hour"), 500)
         self.assertIsNone(ai.budget_gbp("negotiable"))
+        self.assertEqual(ai.budget_gbp("10 000 € et plus"), 8500)          # French thousands separator
+        self.assertEqual(ai.budget_gbp("500 € à 1 000 €"), 850)
+        self.assertEqual(ai.budget_gbp("1.000 € bis 5.000 €"), 4250)
 
     def test_urgency_and_value_raise_rank_low_budget_lowers(self):
         base = ff.to_candidate(fl_project(description="Small UK shop needs Shopify orders into Xero.", budget={}), "q")

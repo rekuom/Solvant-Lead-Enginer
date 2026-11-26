@@ -102,14 +102,30 @@ FX = {"GBP": 1.0, "£": 1.0, "EUR": 0.85, "€": 0.85, "USD": 0.78, "$": 0.78, "
 DEFAULT_INTENT = {"marketplace": "explicit_hire_request", "employment": "employment_or_staffing", "partner": "partner_search"}
 
 
+_STATED_BUDGET = re.compile(
+    r"\bbudget\s*(?:is|of|:|-|–)?\s*:?\s*((?:[$£€]|(?:USD|EUR|GBP|AED|CHF)\s?)\s?[\d][\d,.]*\s?[kK]?"
+    r"(?:\s*(?:-|–|to)\s*(?:[$£€]|(?:USD|EUR|GBP|AED|CHF)\s?)?\s?[\d][\d,.]*\s?[kK]?)?(?:\s*(?:/\s?h(?:ou)?r|per hour|hourly))?"
+    r"(?:\s*\([^)]{1,60}\))?)", re.I)
+
+
+def stated_budget(text: Optional[str]) -> Optional[str]:
+    """A budget the buyer states in the post itself ("Budget: $1,000 (open to ...)"), kept verbatim. Never estimated or converted;
+    a bare number without a currency symbol or code is not taken."""
+    m = _STATED_BUDGET.search(str(text or ""))
+    return re.sub(r"\s+", " ", m.group(1)).strip().rstrip(".,;")[:60] if m else None
+
+
 def budget_gbp(text: Optional[str]) -> Optional[float]:
     """Largest amount in a budget string, roughly in GBP (ranking only). Hourly rates are scaled to a ~20-hour engagement."""
     if not text:
         return None
     t = str(text)
     rate = next((v for k, v in FX.items() if k in t.upper() or k in t), 0.78)
+    t = re.sub(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?!\d))", "", t)      # "10 000 €" (space as thousands separator)
     vals = []
     for num, k in _AMOUNT.findall(t):
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", num):                 # "1.000 €" (dot as thousands separator)
+            num = num.replace(".", "")
         try:
             v = float(num.replace(",", "")) * (1000 if k else 1)
         except ValueError:
@@ -357,6 +373,10 @@ def process(cands: list[dict], now: Optional[datetime] = None, verify: bool = Fa
     now = now or datetime.now(timezone.utc)
     items, rejected, seen = [], Counter(), set()
     for c in cands[:500]:
+        if not c.get("budget"):
+            sb = stated_budget(f"{c.get('title') or ''} {c.get('evidence_quote') or c.get('excerpt') or ''}")
+            if sb:
+                c = dict(c, budget=sb)
         try:
             if (c.get("business") or {}).get("type") == "public_sector":
                 raise Rejected("public sector / institutional procurement excluded")

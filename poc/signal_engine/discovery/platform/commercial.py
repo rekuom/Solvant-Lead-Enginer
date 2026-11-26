@@ -33,18 +33,41 @@ def load_drafts(path: str) -> list[dict]:
     return out
 
 
-def format_report(rows: list[dict], funnel: Optional[dict] = None) -> str:
+STATUS = {"confirmed_open": "open (confirmed by board)", "verified_open": "open (confirmed by board)",
+          "verified_posted": "posted (availability not stated)", "requirement_stated": "requirement stated in a forum post (open status unconfirmed)",
+          "exists": "listing exists (nothing confirmed)"}
+CHANGE_SECTIONS = (("new_buyers", "New buyers"), ("updated_leads", "Updated leads"), ("partners", "Agency partnerships"),
+                   ("employment", "Employment signals"))
+
+
+def _budget(r: dict) -> str:
+    # the buyer's own amount and currency, verbatim; a conversion or estimate is never shown in its place
+    return r.get("budget_text") or "budget not stated"
+
+
+def format_report(rows: list[dict], funnel: Optional[dict] = None, changes: Optional[dict] = None) -> str:
     L = []
     if funnel:
         L.append("Funnel: " + " → ".join(f"{k.replace('_', ' ')} {funnel.get(k, 0)}" for k in
                  ("open_now", "proposal_possible", "drafts_ready", "proposals_submitted", "replies", "meetings", "won")))
     for i, r in enumerate(rows, 1):
-        bits = [r.get("budget_text") or "budget not stated", f"{r['bids']} offers" if r.get("bids") else None,
-                f"posted {r['posted']}" if r.get("posted") else None,
-                {"verified_open": "open (confirmed by board)", "verified_posted": "posted (availability not stated)"}.get(r.get("check_status"), r.get("check_status")),
+        status = r.get("status_label") or r.get("check_status")
+        bits = [_budget(r), f"{r['bids']} offers" if r.get("bids") else "no visible offers" if r.get("status_label") == "requirement_stated" else None,
+                f"posted {r['posted']}" if r.get("posted") else None, STATUS.get(status, status),
                 "draft ready" if r.get("draft_ready") else None, "SUBMITTED" if r.get("submitted") else None]
-        L.append(f"{i}. [{r.get('priority')}] {r.get('title')}\n   {' · '.join(b for b in bits if b)}\n   Next: {r.get('next_step')}\n   {r.get('url')}")
-    return "\n".join(L) if L else "No live opportunities with a concrete next step."
+        score = f" {r['commercial_score']}" if r.get("commercial_score") is not None else ""
+        L.append(f"{i}.{score} [{r.get('priority')}] {r.get('title')}\n   {' · '.join(b for b in bits if b)}")
+        if r.get("flags"):
+            L.append(f"   Review: {', '.join(r['flags'])}")
+        L.append(f"   Next: {r.get('next_step')}\n   {r.get('url')}")
+    if not rows:
+        L.append("No live opportunities with a concrete next step.")
+    if changes:
+        for key, label in CHANGE_SECTIONS:
+            items = changes.get(key) or []
+            L.append(f"{label} ({len(items)})" + ("" if items else ": none"))
+            L.extend(f"   - {x.get('title')} · {_budget(x)} · {x.get('url')}" for x in items[:10])
+    return "\n".join(L)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -57,7 +80,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         if argv[:1] == ["report"]:
             limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 8
             rows = rpc("commercial_shortlist", {"p_token": TOKEN(), "p_limit": limit}) or []
-            print(format_report(rows, rpc("funnel_for_report", {"p_token": TOKEN()}) or {}))
+            try:
+                changes = rpc("daily_changes", {"p_token": TOKEN(), "p_hours": 24}) or {}
+            except RestError:
+                changes = None      # older database without daily_changes: report without the change sections
+            print(format_report(rows, rpc("funnel_for_report", {"p_token": TOKEN()}) or {}, changes))
             return 0
     except RestError as exc:
         print(f"commercial: database call failed (HTTP {exc.status})")
