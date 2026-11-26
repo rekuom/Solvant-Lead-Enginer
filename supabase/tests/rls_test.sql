@@ -148,12 +148,39 @@ select pg_temp.check((solvant.save_proposal_drafts('', '[{"url":"https://www.cod
 select pg_temp.check(solvant.commercial_shortlist('', 10) @> '[{"title":"Agent IA pour les devis","draft_ready":true}]'::jsonb
                      and position('2-integration-crm' in solvant.commercial_shortlist('', 10)::text) = 0, 'shortlist: open with draft; closed excluded');
 select pg_temp.check((solvant.funnel_for_report('') ->> 'drafts_ready')::int = 1, 'report funnel: counts via discovery token');
+-- 4c. original budgets are preserved; the shortlist is ranked commercially, not by A/B/C ---------------------------------------
+select solvant.ingest_records('', '{"scope":"discovery","mode":"agent"}',
+  '[{"source_key":"eu_freelance_boards","url":"https://www.peopleperhour.com/freelance-jobs/x-4532403","title":"Scrape letting agents","budget_text":"$474","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"A","rank_score":80,"engine":"llm","meta":{"discovered_by":"claude_agent","board_listing":true,"value_gbp_est":363,"facts":{"bid_count":84},"action":{"type":"submit_proposal","label":"Submit a proposal on PeoplePerHour","where":"PeopleperHour"}}},
+    {"source_key":"make_community","url":"https://community.make.com/t/airtable-automation-developer-needed/120066","title":"Airtable automation developer needed","verification":"agent_reviewed","pipeline":"A_DIRECT_SME","priority":"C","rank_score":60,"engine":"llm","meta":{"discovered_by":"claude_agent","action":{"type":"reply_publicly","label":"Reply in the thread","where":"Make forum"}}}]');
+select solvant.record_board_checks('', '[{"url":"https://www.peopleperhour.com/freelance-jobs/x-4532403","status":"verified_open","budget":"£363 (fixed price)","bids":84}]');
+reset role;
+select pg_temp.check((select budget_text = '£363 (fixed price)' and meta ->> 'budget_previous' = '$474' from solvant.opportunities where url like '%4532403'),
+                     'board re-check replaces a viewer-currency card price with the buyer''s own budget, keeping the old value');
+select solvant.ingest_records('', '{"scope":"discovery","mode":"agent"}',
+  '[{"source_key":"make_community","url":"https://community.make.com/t/airtable-automation-developer-needed/120066","title":"Airtable automation developer needed","budget_text":"$1,000 (open to hearing what this should cost)","verification":"agent_reviewed","pipeline":"A_DIRECT_SME","priority":"C","rank_score":60,"engine":"llm","meta":{"discovered_by":"claude_agent","action":{"type":"reply_publicly","label":"Reply in the thread","where":"Make forum"}}},
+    {"source_key":"eu_freelance_boards","url":"https://www.peopleperhour.com/freelance-jobs/x-4532403","title":"Scrape letting agents","budget_text":"$474","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"A","rank_score":80,"engine":"llm","meta":{"discovered_by":"claude_agent","board_listing":true}}]');
+select pg_temp.check((select budget_text from solvant.opportunities where url like '%120066') = '$1,000 (open to hearing what this should cost)',
+                     're-ingest fills a stated budget missing from the first insert');
+set role anon;
+reset role;
+select pg_temp.check((select budget_text from solvant.opportunities where url like '%4532403') = '£363 (fixed price)',
+                     're-ingest never replaces the board-verified budget with card text');
+set role anon;
+select pg_temp.check(position('120066' in solvant.commercial_shortlist('', 10)::text) > 0
+                       and position('120066' in solvant.commercial_shortlist('', 10)::text) < position('4532403' in solvant.commercial_shortlist('', 10)::text),
+                     'shortlist: an uncontested direct reply (priority C) outranks a crowded low-value A project');
+select pg_temp.check(solvant.commercial_shortlist('', 10) @> '[{"status_label":"requirement_stated"},{"status_label":"confirmed_open","budget_text":"£363 (fixed price)"}]'::jsonb
+                       and (select bool_or(f ->> 0 like 'heavily contested%') from jsonb_array_elements(solvant.commercial_shortlist('', 10)) e, lateral (select e -> 'flags' as f) z),
+                     'shortlist: status labels, original budget and review flags');
+select pg_temp.check(solvant.daily_changes('', 24) -> 'new_buyers' @> '[{"budget_text":"$1,000 (open to hearing what this should cost)"}]'::jsonb,
+                     'daily changes: new buyers listed with their stated budget');
 reset role;
 select set_config('request.headers', '', false);
 set role anon;
 select pg_temp.expect_error($q$select solvant.save_proposal_drafts('', '[]')$q$, 'proposal drafts need a valid token');
 select pg_temp.expect_error($q$select solvant.board_checks_due('', 5)$q$, 'board checks need a valid token');
 select pg_temp.expect_error($q$select solvant.commercial_shortlist('', 5)$q$, 'shortlist needs a valid token');
+select pg_temp.expect_error($q$select solvant.daily_changes('', 24)$q$, 'daily changes need a valid token');
 select pg_temp.expect_error($q$select solvant.sales_funnel()$q$, 'anon cannot read the sales funnel');
 reset role;
 select pg_temp.check((select source_state from solvant.opportunities where url = 'https://www.codeur.com/projects/2-integration-crm') = 'closed'
@@ -169,7 +196,8 @@ reset role;
 
 select pg_temp.check((select meta -> 'action' ->> 'type' from solvant.opportunities where url = 'https://www.codeur.com/projects/3-legacy') = 'submit_proposal',
                      'legacy open board lead gets a proposal next step on re-check');
-delete from solvant.opportunities where url like 'https://www.codeur.com/projects/%';   -- keep later counts stable
+delete from solvant.opportunities where url like 'https://www.codeur.com/projects/%' or url like 'https://www.peopleperhour.com/freelance-jobs/x-%'
+   or url = 'https://community.make.com/t/airtable-automation-developer-needed/120066';   -- keep later counts stable
 
 reset role;
 

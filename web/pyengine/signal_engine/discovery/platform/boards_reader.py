@@ -215,8 +215,10 @@ def parse_pph(page: str, now: datetime, days: int) -> list[dict]:
         published = rel_date(when, now)
         if _age(published, now) is None or _age(published, now) > days or not relevant(title, desc):
             continue
-        out.append(_cand(url, title, desc, published, "peopleperhour: job list", _text(price) or None, None,
-                         {"bid_count": int(proposals) if proposals else None}))
+        # the list card shows the price converted to the viewer's currency ("$474" for "£363"), so it is never the budget;
+        # the buyer's own amount comes from the listing page (check_listing)
+        out.append(_cand(url, title, desc, published, "peopleperhour: job list", None, None,
+                         {"bid_count": int(proposals) if proposals else None, "card_price_viewer_currency": _text(price) or None}))
     return out
 
 

@@ -165,3 +165,17 @@ class AutoVerificationAndPriority(unittest.TestCase):
                                     qualification={"intent": "employment_or_staffing", "relevance": "relevant", "score": 60, "reason": "salaried role"})],
                               now=datetime(2026, 11, 19, tzinfo=timezone.utc))
         self.assertEqual(items[0]["pipeline"], "F_RECRUITMENT_SIGNAL")
+
+
+class StatedBudgetTest(unittest.TestCase):
+    def test_budget_stated_in_post_is_kept_verbatim(self):
+        from signal_engine.discovery.platform.agent_ingest import stated_budget
+        self.assertEqual(stated_budget("Budget : $1,000 (open to hearing what this should cost)"), "$1,000 (open to hearing what this should cost)")
+        self.assertEqual(stated_budget("my budget is £500-£800 for this"), "£500-£800")
+        self.assertEqual(stated_budget("Budget: $40/hr"), "$40/hr")
+
+    def test_no_currency_or_no_budget_is_never_guessed(self):
+        from signal_engine.discovery.platform.agent_ingest import stated_budget
+        self.assertIsNone(stated_budget("budget 1500"))
+        self.assertIsNone(stated_budget("no budget yet, quote me"))
+
