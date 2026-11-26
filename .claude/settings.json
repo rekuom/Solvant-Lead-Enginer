@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(git:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(bash supabase/tests/run_local.sh)",
+      "mcp__Supabase_-_Solvant_Signal_Engine__execute_sql",
+      "mcp__Supabase_-_Solvant_Signal_Engine__list_tables",
+      "mcp__Supabase_-_Solvant_Signal_Engine__list_migrations",
+      "mcp__github__pull_request_read",
+      "mcp__github__create_pull_request",
+      "mcp__github__merge_pull_request",
+      "mcp__github__actions_list",
+      "mcp__github__actions_get",
+      "mcp__github__get_job_logs",
+      "mcp__github__actions_run_trigger",
+      "mcp__claude-code-remote__subscribe_pr_activity",
+      "mcp__claude-code-remote__unsubscribe_pr_activity",
+      "mcp__claude-code-remote__send_later"
+    ]
+  }
+}
