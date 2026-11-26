@@ -172,6 +172,9 @@ select pg_temp.check(position('120066' in solvant.commercial_shortlist('', 10)::
 select pg_temp.check(solvant.commercial_shortlist('', 10) @> '[{"status_label":"requirement_stated"},{"status_label":"confirmed_open","budget_text":"£363 (fixed price)"}]'::jsonb
                        and (select bool_or(f ->> 0 like 'heavily contested%') from jsonb_array_elements(solvant.commercial_shortlist('', 10)) e, lateral (select e -> 'flags' as f) z),
                      'shortlist: status labels, original budget and review flags');
+select pg_temp.check((select bool_or(f = 'needs a freelancer account on PeopleperHour') and not bool_or(f like '%eu_freelance_boards%')
+                        from jsonb_array_elements(solvant.commercial_shortlist('', 10)) e, jsonb_array_elements_text(e -> 'flags') f),
+                     'shortlist: the account flag names the platform, not the internal source key');
 select pg_temp.check(solvant.daily_changes('', 24) -> 'new_buyers' @> '[{"budget_text":"$1,000 (open to hearing what this should cost)"}]'::jsonb,
                      'daily changes: new buyers listed with their stated budget');
 reset role;
