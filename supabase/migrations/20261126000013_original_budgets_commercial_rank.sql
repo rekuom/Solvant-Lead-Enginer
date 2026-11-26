@@ -215,6 +215,17 @@ update solvant.opportunities
          where budget_text is null and nullif(meta #>> '{board_check,budget}', '') is null) s
  where id = s.mid and s.m is not null;
 
+-- ranking value (never shown as a price) for euro budgets written with a space as thousands separator ("10 000 € et plus"):
+-- the old parser read them as 10 € and 1 €; recompute from the largest amount at the same rough EUR rate the engine uses
+update solvant.opportunities o
+   set meta = o.meta || jsonb_build_object('value_gbp_est', round(v.amount * 0.85, 2))
+  from (select id, max(n[1]::numeric) as amount
+          from solvant.opportunities,
+               regexp_matches(regexp_replace(budget_text, '(\d)[[:space:]  ]+(\d{3})(?!\d)', '\1\2', 'g'), '(\d+)', 'g') as n
+         where budget_text ~ '\d[[:space:]  ]\d{3}' and budget_text like '%€%'
+         group by id) v
+ where o.id = v.id;
+
 -- ---------------------------------------------------------------- commercial shortlist (discovery token)
 -- Ranked by a commercial score, not by the A/B/C priority. Each part is 0-5:
 --   fit (rank_score/20), value (value_gbp_est buckets; unknown is neutral), route (public reply / invited contact 5, marketplace

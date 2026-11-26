@@ -121,8 +121,11 @@ def budget_gbp(text: Optional[str]) -> Optional[float]:
         return None
     t = str(text)
     rate = next((v for k, v in FX.items() if k in t.upper() or k in t), 0.78)
+    t = re.sub(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?!\d))", "", t)      # "10 000 €" (space as thousands separator)
     vals = []
     for num, k in _AMOUNT.findall(t):
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", num):                 # "1.000 €" (dot as thousands separator)
+            num = num.replace(".", "")
         try:
             v = float(num.replace(",", "")) * (1000 if k else 1)
         except ValueError:
