@@ -4,6 +4,7 @@ One Vercel function file per endpoint, each with its operation FIXED (class attr
 how the platform rewrites or presents the request path:
   web/api/engine/intake.py         POST /api/engine/intake         user session JWT required; saved through RLS as that user
   web/api/engine/inbound-email.py  POST /api/engine/inbound-email  ingest token (scope inbound_email) checked in the database
+  web/api/engine/discover.py       POST /api/engine/discover       user session JWT required; quick board refresh saved as that user
   web/api/engine/health.py         GET  /api/engine/health
 
 No service-role key is used anywhere: authority comes from the user's JWT or a hashed, revocable ingest token.
@@ -20,6 +21,23 @@ from signal_engine.discovery.platform.intake import IntakeRejected, is_synthetic
 from signal_engine.discovery.platform.rest import RestError, get_user, rpc  # noqa: E402
 
 MAX_BODY = 3_000_000
+
+
+def handle_discover(headers: dict, body: bytes) -> tuple[int, dict]:
+    """Dashboard "Run discovery": runs under the signed-in owner's session (RLS + editor check in the database)."""
+    auth = headers.get("authorization", "")
+    if not auth.lower().startswith("bearer ") or len(auth) < 40:
+        return 401, {"error": "This device is not authorised"}
+    jwt = auth.split(" ", 1)[1].strip()
+    try:
+        get_user(jwt)
+    except RestError:
+        return 401, {"error": "This device's session has expired"}
+    from signal_engine.discovery.platform import quick_run
+    try:
+        return 200, quick_run.run(lambda fn, args: rpc(fn, args, user_jwt=jwt))
+    except RestError as exc:
+        return (403 if exc.status in (401, 403) else 502), {"error": "Not allowed to run discovery" if exc.status in (401, 403) else "Database error"}
 
 
 def handle_intake(headers: dict, body: bytes) -> tuple[int, dict]:
@@ -103,15 +121,18 @@ class EngineHandler(BaseHTTPRequestHandler):
         return self._send(405, {"error": "method not allowed", "endpoint": self.OP})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.OP not in ("intake", "inbound-email"):
+        if self.OP not in ("intake", "inbound-email", "discover"):
             return self._send(405, {"error": "method not allowed", "endpoint": self.OP})
         length = int(self.headers.get("content-length") or 0)
-        if length <= 0 or length > MAX_BODY:
+        if self.OP == "discover":
+            length = max(length, 0)
+        elif length <= 0 or length > MAX_BODY:
             return self._send(413, {"error": "request body missing or too large"})
-        body = self.rfile.read(length)
+        body = self.rfile.read(length) if length else b""
         headers = {k.lower(): v for k, v in self.headers.items()}
         try:
-            status, payload = handle_intake(headers, body) if self.OP == "intake" else handle_inbound(headers, body)
+            status, payload = (handle_intake(headers, body) if self.OP == "intake" else handle_discover(headers, body)
+                               if self.OP == "discover" else handle_inbound(headers, body))
         except Exception:  # never echo internals or submitted content
             status, payload = 500, {"error": "internal error"}
         return self._send(status, payload)

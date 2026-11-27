@@ -4,12 +4,11 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 const LINKS = [
-  { href: "/", label: "Overview" },
+  { href: "/", label: "Dashboard" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/pipeline", label: "Pipeline" },
   { href: "/intake", label: "Add leads" },
   { href: "/follow-ups", label: "Follow-ups" },
-  { href: "/searches", label: "Saved searches" },
   { href: "/analytics", label: "Analytics" },
   { href: "/sources", label: "Sources" },
   { href: "/settings", label: "Settings" },
@@ -39,9 +38,6 @@ export function Nav({ unread, email, role }: { unread: number; email: string; ro
             <span aria-hidden>🔔</span>
             {unread > 0 ? <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold text-white">{unread}</span> : null}
           </Link>
-          <form action="/auth/signout" method="post" className="hidden sm:block">
-            <button className="btn" title={`${email} (${role})`}>Sign out</button>
-          </form>
           <button className="btn lg:hidden" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Menu">☰</button>
         </div>
       </div>
@@ -51,7 +47,6 @@ export function Nav({ unread, email, role }: { unread: number; email: string; ro
             <Link key={l.href} href={l.href} onClick={() => setOpen(false)}
               className={`block rounded-md px-2 py-2 text-sm ${active(l.href) ? "font-semibold text-brand-600" : ""}`}>{l.label}</Link>
           ))}
-          <form action="/auth/signout" method="post"><button className="mt-1 px-2 py-2 text-sm muted">Sign out ({email})</button></form>
         </nav>
       ) : null}
     </header>

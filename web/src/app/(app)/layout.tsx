@@ -10,13 +10,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center p-4">
         <div className="panel space-y-3 p-6">
-          <h1 className="text-lg font-semibold">Access pending</h1>
-          <p className="muted text-sm">
-            You are signed in as <b>{user.email}</b>, but this workspace is private. An administrator must add you as a member.
-            If you are the owner setting this up for the first time, enter the one-time setup code.
-          </p>
+          <h1 className="text-lg font-semibold">This device isn&apos;t authorised for the workspace</h1>
+          <p className="muted text-sm">It is signed in as <b>{user.email}</b>, which is not the owner account. First-time setup only: enter the one-time setup code.</p>
           <ClaimAccess />
-          <form action="/auth/signout" method="post"><button className="btn w-full justify-center">Sign out</button></form>
+          <form action="/auth/signout" method="post"><button className="btn w-full justify-center">Use a different account</button></form>
         </div>
       </main>
     );

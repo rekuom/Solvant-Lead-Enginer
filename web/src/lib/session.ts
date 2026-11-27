@@ -9,7 +9,7 @@ export type Role = "admin" | "editor" | "viewer";
 export const getContext = cache(async () => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) redirect("/login");
+  if (!data.user) redirect("/device");
   const { data: role } = await supabase.rpc("my_role");
   return { supabase, user: data.user, role: (role as Role | null) ?? null };
 });
