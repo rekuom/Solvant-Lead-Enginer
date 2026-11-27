@@ -6,10 +6,14 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const nextParam = searchParams.get("next") ?? "/";
   const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
+  const tokenHash = searchParams.get("token_hash");
+  const supabase = await createClient();
   if (code) {
-    const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(`${origin}${next}`);
+  } else if (tokenHash) {
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "email" });
+    if (!error) return NextResponse.redirect(`${origin}${next}`);
   }
-  return NextResponse.redirect(`${origin}/login?error=link`);
+  return NextResponse.redirect(`${origin}/device?error=link`);
 }

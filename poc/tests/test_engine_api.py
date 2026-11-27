@@ -115,7 +115,7 @@ class DeployedEndpoints(unittest.TestCase):
         cfg = json.loads((ROOT / "web" / "vercel.json").read_text())
         self.assertNotIn("rewrites", cfg)
         self.assertIn("pyengine/**", cfg["functions"]["api/engine/*.py"]["includeFiles"])
-        self.assertEqual(sorted(p.name for p in (ROOT / "web" / "api" / "engine").glob("*.py")), ["health.py", "inbound-email.py", "intake.py"])
+        self.assertEqual(sorted(p.name for p in (ROOT / "web" / "api" / "engine").glob("*.py")), ["discover.py", "health.py", "inbound-email.py", "intake.py"])
         self.assertFalse(list((ROOT / "web" / "api").glob("*.py")), "no catch-all function file at api/ root")
 
     def test_operation_is_independent_of_the_request_path(self):

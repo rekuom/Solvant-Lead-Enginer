@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { DEVICE_COOKIE } from "@/lib/supabase/cookies";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback"];
+const PUBLIC_PATHS = ["/device", "/login", "/auth/callback"];
 
-/** Refreshes the Supabase session cookie and redirects signed-out visitors to /login (optimistic check;
- *  authorisation is enforced again by RLS + membership on every query). */
+/** Keeps the trusted device signed in (renews the persistent session cookie on every visit) and sends an unauthorised
+ *  device to the one-time /device page. Authorisation is enforced again by RLS + membership on every query. */
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +14,7 @@ export async function proxy(request: NextRequest) {
     return response;
   }
   const supabase = createServerClient(url, key, {
+    cookieOptions: DEVICE_COOKIE,
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -28,7 +30,7 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (!data.user && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
     const login = request.nextUrl.clone();
-    login.pathname = "/login";
+    login.pathname = "/device";
     login.search = path !== "/" ? `?next=${encodeURIComponent(path)}` : "";
     return NextResponse.redirect(login);
   }

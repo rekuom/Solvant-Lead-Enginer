@@ -150,7 +150,9 @@ If the plan can't be fetched, **scheduled runs collect nothing**, and the Source
    - Environment variables: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
    - Plan choice: the Hobby plan is non-commercial.
 8. **Run the live smoke tests:** `scripts/smoke_test.py --base-url <app>` (endpoint routing and denial checks), then the checklist in `acceptance-tests.md`.
-9. **Create the first administrator.** Run `select solvant.create_bootstrap_code();` in the SQL editor. Sign up in the app, confirm your e-mail and enter the code. Then turn off public sign-ups.
+9. **Create the first administrator.** Run `select solvant.create_bootstrap_code();` in the SQL editor, create the owner account in Supabase Auth, authorise your device on `/device` and enter the code. Then turn off public sign-ups.
+
+**Daily access (private tool).** There is no login screen in daily use. The owner's device keeps a persistent Supabase session (about 400 days, renewed on every visit), so the site opens straight into the dashboard. A new or forgotten device sees only `/device`, which sends a one-time sign-in link to the owner (it never creates accounts), with the owner's password as a fallback. Set the optional Vercel variable `SOLVANT_OWNER_EMAIL` so the page needs no typing. Data access is unchanged: RLS and membership on every query, no service-role key, no credentials in the browser. **Run discovery** on the dashboard performs a quick board refresh under the owner's own session (`/api/engine/discover` → `member_ingest_discovery`, editors only).
 10. **Connect discovery.**
     - In **Settings → Discovery connection**, create a token.
     - Add the GitHub secret `SIGNAL_INGEST_TOKEN` and the variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.

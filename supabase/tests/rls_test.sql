@@ -216,6 +216,23 @@ delete from solvant.opportunities where url like 'https://www.codeur.com/project
 
 reset role;
 
+-- 4c. owner device: discovery from the dashboard without a token ---------------------------------------------------------
+select set_config('request.headers', '', false);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.check((solvant.member_ingest_discovery('{"logs":[{"source_key":"eu_freelance_boards","status":"ok","records":1}]}',
+  '[{"source_key":"eu_freelance_boards","url":"https://www.codeur.com/projects/9-dashboard-run","title":"Automatiser les devis","verification":"agent_reviewed","pipeline":"B_FREELANCE_PROJECT","priority":"B","engine":"rules","meta":{"discovered_by":"claude_agent","board_listing":true}}]') ->> 'added')::int = 1,
+  'owner runs discovery from the dashboard (no token in the browser)');
+select pg_temp.check(jsonb_typeof(solvant.board_checks_due('', 5)) = 'array', 'owner session may run the board re-check');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000ff');
+select pg_temp.expect_error($q$select solvant.member_ingest_discovery('{}', '[]')$q$, 'non-member cannot run discovery');
+select pg_temp.expect_error($q$select solvant.board_checks_due('', 5)$q$, 'non-member cannot use discovery functions');
+reset role;
+set role anon;
+select pg_temp.expect_error($q$select solvant.member_ingest_discovery('{}', '[]')$q$, 'anon cannot run discovery');
+reset role;
+delete from solvant.opportunities where url = 'https://www.codeur.com/projects/9-dashboard-run';
+
 -- 5. viewer / editor permissions ------------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.check((select count(*) from solvant.opportunities) = 5, 'viewer reads opportunities');

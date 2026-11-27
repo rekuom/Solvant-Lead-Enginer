@@ -1,20 +1,9 @@
 "use client";
 import { useActionState } from "react";
-import { addMember, createIngestToken, purgeExpired, saveLlmSettings } from "../admin-actions";
+import { createIngestToken, purgeExpired, saveLlmSettings } from "../admin-actions";
 
 const Msg = ({ s }: { s: { error: string; ok?: string } }) =>
   s.error ? <p className="text-sm text-red-600">{s.error}</p> : s.ok ? <p className="text-sm text-emerald-600">{s.ok}</p> : null;
-
-export function MemberForm() {
-  const [s, action, pending] = useActionState(addMember, { error: "" });
-  return (
-    <form action={action} className="flex flex-wrap items-end gap-2">
-      <div className="min-w-56 flex-1"><label className="label">E-mail of an existing account</label><input name="email" type="email" required className="input" /></div>
-      <div><label className="label">Role</label><select name="role" className="input"><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="admin">Admin</option></select></div>
-      <button className="btn" disabled={pending}>Add / update</button><Msg s={s} />
-    </form>
-  );
-}
 
 export function TokenForm() {
   const [s, action, pending] = useActionState(createIngestToken, { error: "" });

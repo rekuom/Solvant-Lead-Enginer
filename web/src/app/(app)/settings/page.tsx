@@ -1,33 +1,25 @@
 import { requireMember } from "@/lib/session";
 import { Badge, PageHeader, Section, fmtDate } from "@/components/ui";
-import { removeMember, revokeIngestToken } from "../admin-actions";
-import { LlmForm, MemberForm, PurgeForm, TokenForm } from "./forms";
+import { revokeIngestToken } from "../admin-actions";
+import { LlmForm, PurgeForm, TokenForm } from "./forms";
 
 export const metadata = { title: "Settings" };
 
 export default async function Settings() {
   const { supabase, role, user } = await requireMember();
   const admin = role === "admin";
-  const [{ data: members }, { data: tokens }, { data: settings }] = await Promise.all([
-    supabase.rpc("list_members"),
+  const [{ data: tokens }, { data: settings }] = await Promise.all([
     admin ? supabase.from("ingest_tokens").select("id,name,scopes,created_at,last_used_at,revoked_at").order("created_at", { ascending: false }) : Promise.resolve({ data: [] }),
     supabase.from("app_settings").select("key,value"),
   ]);
   const setting = (k: string) => (settings ?? []).find((s) => s.key === k)?.value ?? {};
   return (
     <div className="space-y-5">
-      <PageHeader title="Settings" subtitle={`Signed in as ${user.email} · role: ${role}`} />
-      <Section title="Team members">
-        <ul className="mb-3 divide-y line text-sm">
-          {((members ?? []) as any[]).map((m) => (
-            <li key={m.user_id} className="flex items-center gap-2 py-2">
-              <span className="flex-1">{m.email ?? m.display_name ?? m.user_id.slice(0, 8)}</span><Badge>{m.role}</Badge>
-              {admin && m.user_id !== user.id ? <form action={removeMember}><input type="hidden" name="user_id" value={m.user_id} /><button className="btn btn-danger">Remove</button></form> : null}
-            </li>
-          ))}
-        </ul>
-        {admin ? <MemberForm /> : null}
-        <p className="muted mt-2 text-xs">People create their own account on the sign-in page; an admin then grants a role here. Accounts without a role see nothing.</p>
+      <PageHeader title="Settings" subtitle="Private workspace · this device is trusted" />
+      <Section title="This device">
+        <p className="text-sm">This device is trusted and opens straight into the dashboard. The session renews itself each time you visit, so there is no daily sign-in.</p>
+        <p className="muted mt-1 text-xs">Lost or replaced a device? Forget it here, then authorise the new one with a one-time e-mailed link.</p>
+        <form action="/auth/signout" method="post" className="mt-2"><button className="btn">Forget this device</button></form>
       </Section>
 
       {admin ? (

@@ -2,9 +2,10 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { PageHeader, StatCard, Section, fmtMoney, fmtDate, Badge } from "@/components/ui";
 import { PIPELINES } from "@/lib/labels";
+import { RunDiscovery } from "@/components/run-discovery";
 import { FUNNEL_STEPS, STATUS_LABEL, byCommercialScore, type ScoredLead } from "@/lib/commercial";
 
-export const metadata = { title: "Overview" };
+export const metadata = { title: "Dashboard" };
 
 type Counts = Record<string, number>;
 
@@ -28,8 +29,8 @@ export default async function Overview() {
   const n = (k: string) => Number(c[k] ?? 0);
   return (
     <div className="space-y-6">
-      <PageHeader title="Overview" subtitle="Every number is live from the private database and links to the records behind it. Zero means zero."
-        actions={<Link href="/intake" className="btn btn-primary">+ Add a lead</Link>} />
+      <PageHeader title="Dashboard" subtitle="Live from the private database. Run discovery, review the best opportunities, manage outreach."
+        actions={<div className="flex items-start gap-2"><Link href="/intake" className="btn">+ Add a lead</Link><RunDiscovery /></div>} />
 
       {failing && failing.length > 0 ? (
         <div className="panel border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-500/10 dark:text-red-200">
@@ -37,34 +38,6 @@ export default async function Overview() {
           {failing.map((s) => s.name).join(", ")} — <Link className="underline" href="/sources">see Sources</Link>
         </div>
       ) : null}
-
-      <h2 className="muted text-xs font-semibold uppercase tracking-wide">Discovery (records found)</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="New today" value={n("today")} href={`/opportunities?from=${today}`} />
-        <StatCard label="New this week" value={n("week")} href={`/opportunities?from=${weekAgo}`} />
-        <StatCard label="New this month" value={n("month")} href={`/opportunities?from=${monthAgo}`} />
-        <StatCard label="All discovered" value={n("all")} href="/opportunities?excluded=1" hint="incl. excluded (audit)" />
-        <StatCard label="Verified" value={n("verified")} href="/opportunities?verification=verified&excluded=1" tone="green" />
-        <StatCard label="Unverified" value={n("unverified")} href="/opportunities?verification=unverified&excluded=1" />
-        <StatCard label="Awaiting review" value={n("awaiting_review")} href="/opportunities?stage=awaiting_review" />
-        <StatCard label="Follow-ups due" value={n("follow_ups_due")} href="/follow-ups" />
-      </div>
-
-      <Section title="Pipelines">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {PIPELINES.map((p) => (
-            <StatCard key={p.key} label={`${p.letter} · ${p.short}`} value={n(p.key)} href={`/opportunities?pipeline=${p.key}`} hint={p.label} />
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Sales funnel (buyer opportunities, last 30 days)">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          {FUNNEL_STEPS.map((s) => <StatCard key={s.key} label={s.label} value={Number(f[s.key] ?? 0)} href="/opportunities" hint={s.hint} tone={s.key === "won" ? "green" : undefined} />)}
-        </div>
-        <p className="muted mt-2 text-xs">Discovery counts above are records found; this funnel counts only real buyer opportunities and your actual sales steps.
-          Revenue won: {fmtMoney(Number(f.revenue ?? 0))} · Lead acquisition costs: {fmtMoney(n("acquisition_costs"))}</p>
-      </Section>
 
       <Section title="Best open opportunities (by commercial score)">
         {best.length ? (
@@ -92,6 +65,34 @@ export default async function Overview() {
             })}
           </ul>
         ) : <p className="muted text-sm">No live opportunities with a permitted route right now.</p>}
+      </Section>
+
+      <Section title="Sales funnel (buyer opportunities, last 30 days)">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+          {FUNNEL_STEPS.map((s) => <StatCard key={s.key} label={s.label} value={Number(f[s.key] ?? 0)} href="/opportunities" hint={s.hint} tone={s.key === "won" ? "green" : undefined} />)}
+        </div>
+        <p className="muted mt-2 text-xs">Discovery counts above are records found; this funnel counts only real buyer opportunities and your actual sales steps.
+          Revenue won: {fmtMoney(Number(f.revenue ?? 0))} · Lead acquisition costs: {fmtMoney(n("acquisition_costs"))}</p>
+      </Section>
+
+      <h2 className="muted text-xs font-semibold uppercase tracking-wide">Discovery (records found)</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="New today" value={n("today")} href={`/opportunities?from=${today}`} />
+        <StatCard label="New this week" value={n("week")} href={`/opportunities?from=${weekAgo}`} />
+        <StatCard label="New this month" value={n("month")} href={`/opportunities?from=${monthAgo}`} />
+        <StatCard label="All discovered" value={n("all")} href="/opportunities?excluded=1" hint="incl. excluded (audit)" />
+        <StatCard label="Verified" value={n("verified")} href="/opportunities?verification=verified&excluded=1" tone="green" />
+        <StatCard label="Unverified" value={n("unverified")} href="/opportunities?verification=unverified&excluded=1" />
+        <StatCard label="Awaiting review" value={n("awaiting_review")} href="/opportunities?stage=awaiting_review" />
+        <StatCard label="Follow-ups due" value={n("follow_ups_due")} href="/follow-ups" />
+      </div>
+
+      <Section title="Pipelines">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {PIPELINES.map((p) => (
+            <StatCard key={p.key} label={`${p.letter} · ${p.short}`} value={n(p.key)} href={`/opportunities?pipeline=${p.key}`} hint={p.label} />
+          ))}
+        </div>
       </Section>
 
       <Section title="Latest opportunities" actions={<Link href="/opportunities" className="text-sm text-brand-600">View all →</Link>}>
