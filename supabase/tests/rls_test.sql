@@ -199,6 +199,18 @@ reset role;
 
 select pg_temp.check((select meta -> 'action' ->> 'type' from solvant.opportunities where url = 'https://www.codeur.com/projects/3-legacy') = 'submit_proposal',
                      'legacy open board lead gets a proposal next step on re-check');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.check(jsonb_array_length(solvant.commercial_candidates(10)) >= 1
+                     and (solvant.commercial_candidates(10) -> 0) ? 'commercial_score', 'dashboard: members get the commercially scored list');
+reset role;
+select set_config('request.headers', json_build_object('x-signal-token', (select v from t_codes where k = 'ingest'))::text, false);
+select pg_temp.check((select jsonb_agg(x ->> 'id') from jsonb_array_elements(solvant.commercial_shortlist('', 10)) x)
+                     = (select jsonb_agg(x ->> 'id') from jsonb_array_elements(solvant.commercial_candidates(10)) x),
+                     'daily report and dashboard rank identically');
+select set_config('request.headers', '', false);
+set role anon;
+select pg_temp.expect_error('select solvant.commercial_candidates(5)', 'anon cannot read the scored list');
+reset role;
 delete from solvant.opportunities where url like 'https://www.codeur.com/projects/%' or url like 'https://www.peopleperhour.com/freelance-jobs/x-%'
    or url = 'https://community.make.com/t/airtable-automation-developer-needed/120066';   -- keep later counts stable
 
