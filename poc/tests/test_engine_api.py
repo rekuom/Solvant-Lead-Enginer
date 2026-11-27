@@ -77,6 +77,10 @@ def _load_endpoint(bundle: Path, name: str):
     return mod.handler
 
 
+DEVICE_KEY = "correct-horse-battery-staple-solvant-2026"
+DEVICE_COOKIE = "17a6e92056aa2773c5af804929684ee3e1546527f41503ec59f6be132437fda0"
+
+
 class DeployedEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -85,6 +89,9 @@ class DeployedEndpoints(unittest.TestCase):
         os.environ["SUPABASE_URL"] = f"http://127.0.0.1:{cls.fake.server_port}"
         os.environ["SUPABASE_PUBLISHABLE_KEY"] = PUBLISHABLE
         os.environ.pop("SUPABASE_ANON_KEY", None)
+        # private-tool access: these tests act as the authorised device on the production host
+        os.environ["SOLVANT_ACCESS_KEY"] = DEVICE_KEY
+        os.environ["SOLVANT_PUBLIC_HOST"] = "solvant.test"
         # copy the deployment layout (what vercel.json bundles: api/engine/*.py + includeFiles pyengine/**)
         cls.tmp = tempfile.TemporaryDirectory()
         cls.bundle = Path(cls.tmp.name)
@@ -103,13 +110,25 @@ class DeployedEndpoints(unittest.TestCase):
             s.shutdown()
         cls.tmp.cleanup()
 
-    def _req(self, name, path, data=None, headers=None, method=None):
-        req = urllib.request.Request(self.base[name] + path, data=data, method=method or ("POST" if data is not None else "GET"), headers=headers or {})
+    def _req(self, name, path, data=None, headers=None, method=None, device=True):
+        h = dict(headers or {})
+        if device:
+            h.setdefault("Cookie", f"solvant_device={DEVICE_COOKIE}")
+            h.setdefault("X-Forwarded-Host", "solvant.test")
+        req = urllib.request.Request(self.base[name] + path, data=data, method=method or ("POST" if data is not None else "GET"), headers=h)
         try:
             with urllib.request.urlopen(req) as r:
                 return r.status, json.loads(r.read()), r.headers.get("X-Solvant-Endpoint")
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read()), e.headers.get("X-Solvant-Endpoint")
+
+    def test_without_device_cookie_every_endpoint_is_hidden(self):
+        self.assertEqual(self._req("health", "/", device=False)[0], 404)
+        self.assertEqual(self._req("intake", "/", b"{}", {"Content-Type": "application/json"}, device=False)[0], 404)
+        wrong_host = {"Cookie": f"solvant_device={DEVICE_COOKIE}", "X-Forwarded-Host": "solvant-git-preview.vercel.app"}
+        self.assertEqual(self._req("health", "/", headers=wrong_host, device=False)[0], 404)
+        # the machine endpoint keeps its own token check (no device cookie needed, still 401 without a token)
+        self.assertEqual(self._req("inbound-email", "/", b"x", {"Content-Type": "message/rfc822"}, device=False)[0], 401)
 
     def test_vercel_config_routes_files_not_rewrites(self):
         cfg = json.loads((ROOT / "web" / "vercel.json").read_text())

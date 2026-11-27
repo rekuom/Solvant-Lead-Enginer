@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Dashboard" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/pipeline", label: "Pipeline" },
+  { href: "/outreach", label: "Outreach" },
   { href: "/intake", label: "Add leads" },
   { href: "/follow-ups", label: "Follow-ups" },
   { href: "/analytics", label: "Analytics" },

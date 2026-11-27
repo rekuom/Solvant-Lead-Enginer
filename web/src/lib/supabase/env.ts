@@ -1,5 +1,5 @@
 /** Supabase public configuration. Prefer the modern publishable key (sb_publishable_…); the legacy anon JWT is accepted
- *  as a fallback. Never configure a secret / service-role key here: the app does not need one. */
+ *  as a fallback. Never configure a secret key here: the server-only secret lives in SUPABASE_SECRET_KEY (see lib/server/admin.ts). */
 export const DB_SCHEMA = "solvant";
 
 export function supabaseEnv(): { url: string; key: string } {

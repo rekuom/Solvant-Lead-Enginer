@@ -5,6 +5,7 @@ import { Badge, PageHeader, Section, fmtDate, fmtMoney } from "@/components/ui";
 import { PIPELINE_BY_KEY, STAGES, STAGE_LABEL, VERIFICATION, humanize, INTENT_TONE } from "@/lib/labels";
 import { addContactChannel, addFollowUp, addNote, addProposal, completeFollowUp, logActivity, markDuplicate, markProposalSubmitted, setStage } from "../../actions";
 import { CHECK_STATUS, nextStep } from "@/lib/commercial";
+import { ComposeEmail } from "@/components/compose-email";
 import { DetailsForm, OverrideForm, VerifyForm } from "./forms";
 
 type Dim = { value?: string; evidence?: string[]; confidence?: string };
@@ -32,6 +33,13 @@ export default async function OpportunityDetail({ params }: { params: Promise<{ 
     supabase.rpc("list_members"),
     supabase.from("sources").select("name,permission_status,notes,contact_route").eq("key", o.source_key).maybeSingle(),
   ]);
+  const [{ data: mailbox }, { data: mails }] = await Promise.all([
+    supabase.from("mail_accounts").select("email").eq("active", true).maybeSingle(),
+    supabase.from("outreach_emails").select("id,to_address,subject,status,error,sent_at,created_at,reply_detected_at,bounce_detected_at").eq("opportunity_id", id).order("created_at", { ascending: false }),
+  ]);
+  const permittedChannel = (chans.data ?? []).find((c) => c.kind === "business_email" && ["invited", "published_for_business"].includes(c.permission) && c.value);
+  const draft = (props.data ?? []).find((pr) => pr.status === "draft" && pr.body);
+  const marketplaceOnly = o.meta?.action?.type === "submit_proposal";
   const current = (cls.data ?? []).find((c) => c.is_current);
   const dims = (current?.dimensions ?? {}) as Record<string, Dim>;
   const editable = canEdit(role);
@@ -229,6 +237,26 @@ export default async function OpportunityDetail({ params }: { params: Promise<{ 
                 <input name="due_at" type="datetime-local" className="input" required />
                 <button className="btn">Add follow-up</button>
               </form>
+            ) : null}
+          </Section>
+
+          <Section title="Compose e-mail">
+            {marketplaceOnly ? (
+              <p className="text-sm">This is a marketplace project: contact stays on the platform, so e-mail is disabled. Submit the proposal there.</p>
+            ) : !mailbox ? (
+              <p className="text-sm">Connect your Outlook mailbox on <Link href="/outreach" className="underline">Outreach</Link> to send e-mail from here.</p>
+            ) : editable ? (
+              <ComposeEmail opportunityId={o.id} to={permittedChannel?.value ?? ""} toPermitted={!!permittedChannel} mailbox={mailbox.email}
+                subject={draft?.title ?? `Re: ${o.title ?? "your request"}`} body={draft?.body ?? ""} proposalId={draft?.id ?? null} />
+            ) : null}
+            {(mails ?? []).length ? (
+              <ul className="mt-3 space-y-1 text-xs">
+                {(mails ?? []).map((m) => (
+                  <li key={m.id}><Badge tone={m.status === "failed" || m.bounce_detected_at ? "red" : m.reply_detected_at ? "green" : "blue"}>
+                    {m.status === "failed" ? "Failed" : m.bounce_detected_at ? "Bounced" : m.reply_detected_at ? "Replied" : "Sent"}</Badge>{" "}
+                    {m.subject} → {m.to_address} · {fmtDate(m.sent_at ?? m.created_at, true)}{m.error ? <span className="text-red-600"> · {m.error}</span> : null}</li>
+                ))}
+              </ul>
             ) : null}
           </Section>
 

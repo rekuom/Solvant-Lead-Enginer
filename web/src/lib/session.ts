@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 
 export type Role = "admin" | "editor" | "viewer";
@@ -9,7 +9,7 @@ export type Role = "admin" | "editor" | "viewer";
 export const getContext = cache(async () => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) redirect("/device");
+  if (!data.user) notFound();   // the proxy always provides the owner session to an authorised device
   const { data: role } = await supabase.rpc("my_role");
   return { supabase, user: data.user, role: (role as Role | null) ?? null };
 });
