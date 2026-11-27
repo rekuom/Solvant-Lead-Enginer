@@ -49,3 +49,21 @@ export const FUNNEL_STEPS: { key: string; label: string; hint: string }[] = [
   { key: "meetings", label: "Meetings", hint: "Meeting booked or held" },
   { key: "won", label: "Deals won", hint: "Won" },
 ];
+
+/** A row of solvant.commercial_candidates(): the same commercial score the daily report uses. */
+export type ScoredLead = {
+  id: string; title: string | null; url: string; priority: string | null; budget_text: string | null; posted: string | null;
+  next_step: string | null; check_status: string | null; bids: number | null; draft_ready: boolean; submitted: boolean;
+  status_label: "confirmed_open" | "exists" | "requirement_stated" | string; commercial_score: number; is_new?: boolean; flags?: string[] | null;
+};
+
+export const STATUS_LABEL: Record<string, { label: string; tone: Tone; help: string }> = {
+  confirmed_open: { label: "Confirmed open", tone: "green", help: "The board itself shows the project as open (re-checked daily)." },
+  exists: { label: "Listing exists", tone: "blue", help: "The listing is online but the board does not confirm it is still open." },
+  requirement_stated: { label: "Requirement stated", tone: "gray", help: "A public request; the source has no open/closed status." },
+};
+
+/** Highest commercial score first (the database already orders; this keeps the UI stable if rows arrive unordered). */
+export function byCommercialScore(rows: ScoredLead[]): ScoredLead[] {
+  return [...rows].sort((a, b) => (b.commercial_score ?? 0) - (a.commercial_score ?? 0));
+}
