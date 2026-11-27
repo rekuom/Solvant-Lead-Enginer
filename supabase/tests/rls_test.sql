@@ -45,6 +45,7 @@ reset role;
 
 -- 2. signed-in but not a member ----------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000ff');
+select pg_temp.expect_error('select solvant.commercial_top(5)', 'non-members cannot read the commercial top list');
 select pg_temp.check((select count(*) from solvant.sources) = 0, 'non-member sees no sources');
 select pg_temp.expect_error($q$select solvant.save_intake('{"origin":"manual"}', '[]')$q$, 'non-member cannot save intake');
 select pg_temp.expect_error($q$select solvant.claim_admin('wrong-code')$q$, 'wrong bootstrap code rejected');
@@ -208,6 +209,7 @@ reset role;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.check((select count(*) from solvant.opportunities) = 5, 'viewer reads opportunities');
 select pg_temp.check((select (solvant.dashboard_counts() ->> 'all')::int) = 5, 'dashboard counts for members');
+select pg_temp.check(jsonb_typeof(solvant.commercial_top(5)) = 'array', 'members get the commercial top list');
 update solvant.opportunities set stage = 'contacted' where url = 'https://github.com/a/b/issues/1';
 select pg_temp.check((select stage from solvant.opportunities where url = 'https://github.com/a/b/issues/1') = 'needs_review', 'viewer update changes nothing (RLS)');
 select pg_temp.expect_error($q$select solvant.override_classification((select id from solvant.opportunities limit 1), 'EXCLUDED', null, '{}', 'spam')$q$, 'viewer cannot reclassify');

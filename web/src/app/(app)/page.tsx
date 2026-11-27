@@ -2,31 +2,38 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { PageHeader, StatCard, Section, fmtMoney, fmtDate, Badge } from "@/components/ui";
 import { PIPELINES } from "@/lib/labels";
-import { CHECK_STATUS, FUNNEL_STEPS, isActionable, nextStep } from "@/lib/commercial";
+import { FUNNEL_STEPS } from "@/lib/commercial";
 
 export const metadata = { title: "Overview" };
 
 type Counts = Record<string, number>;
+type TopLead = {
+  id: string; title: string | null; url: string; priority: string | null; budget_text: string | null; posted: string | null;
+  next_step: string | null; bids: string | null; status_label: string; commercial_score: number; flags: string[] | null;
+  draft_ready: boolean; submitted: boolean;
+};
+const STATUS: Record<string, { label: string; tone: "green" | "blue" | "amber" }> = {
+  confirmed_open: { label: "Open (confirmed by board)", tone: "green" },
+  requirement_stated: { label: "Forum request (open status unconfirmed)", tone: "blue" },
+  exists: { label: "Listing exists (not confirmed)", tone: "amber" },
+};
 
 export default async function Overview() {
   const { supabase } = await requireMember();
   const today = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-  const [{ data: counts }, { data: failing }, { data: recent }, { data: funnel }, { data: candidates }, { data: drafts }] = await Promise.all([
+  const [{ data: counts }, { data: failing }, { data: recent }, { data: funnel }, { data: top }] = await Promise.all([
     supabase.rpc("dashboard_counts"),
     supabase.from("sources").select("key,name,last_status,last_error,last_run_at").eq("enabled", true).in("last_status", ["failed", "partial"]),
     supabase.from("opportunities").select("id,title,pipeline,source_key,discovered_at,priority").neq("pipeline", "EXCLUDED")
       .order("discovered_at", { ascending: false }).limit(8),
     supabase.rpc("sales_funnel", { p_days: 30 }),
-    supabase.from("opportunities").select("id,title,pipeline,priority,source_key,source_state,stage,budget_text,published_at,rank_score,meta")
-      .in("priority", ["A", "B"]).in("pipeline", ["A_DIRECT_SME", "B_FREELANCE_PROJECT", "C_AGENCY_PARTNER"]).is("duplicate_of", null)
-      .gte("discovered_at", monthAgo).order("priority").order("rank_score", { ascending: false }).limit(60),
-    supabase.from("proposals").select("opportunity_id,status").in("status", ["draft", "sent"]),
+    // same commercial ranking as the daily report (fit, value, route, competition, open status, freshness), not A/B/C
+    supabase.rpc("commercial_top", { p_limit: 5 }),
   ]);
   const f = (funnel ?? {}) as Counts;
-  const draftFor = new Map((drafts ?? []).map((d) => [d.opportunity_id, d.status]));
-  const best = (candidates ?? []).filter(isActionable).slice(0, 10);
+  const best = (Array.isArray(top) ? top : []) as TopLead[];
   const c = (counts ?? {}) as Counts;
   const n = (k: string) => Number(c[k] ?? 0);
   return (
@@ -69,28 +76,31 @@ export default async function Overview() {
           Revenue won: {fmtMoney(Number(f.revenue ?? 0))} · Lead acquisition costs: {fmtMoney(n("acquisition_costs"))}</p>
       </Section>
 
-      <Section title="Best open opportunities">
+      <Section title="Today's top 5 to pursue">
+        <p className="muted mb-2 text-xs">Ranked by commercial score: technical fit, value, how easy the buyer is to reach, competition, confirmed open status and freshness. Budgets are the buyer's own amount and currency. Nothing is sent without you.</p>
         {best.length ? (
-          <ul className="divide-y line">
-            {best.map((o) => {
-              const st = nextStep(o);
-              const chk = CHECK_STATUS[o.meta?.board_check?.status ?? ""];
-              const d = draftFor.get(o.id);
+          <ol className="divide-y line">
+            {best.map((o, i) => {
+              const st = STATUS[o.status_label];
               return (
                 <li key={o.id} className="py-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={o.priority === "A" ? "green" : "gray"}>{o.priority}</Badge>
+                    <span className="w-5 text-sm font-semibold">{i + 1}.</span>
+                    <Badge tone="green" title="Commercial score (0-100)">{o.commercial_score}</Badge>
                     <Link href={`/opportunities/${o.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">{o.title || "(untitled)"}</Link>
-                    {chk ? <Badge tone={chk.tone} title={chk.help}>{chk.label}</Badge> : null}
-                    {d === "draft" ? <Badge tone="violet">Draft ready</Badge> : d === "sent" ? <Badge tone="green">Submitted</Badge> : null}
+                    {st ? <Badge tone={st.tone}>{st.label}</Badge> : null}
+                    {o.submitted ? <Badge tone="green">Submitted</Badge> : o.draft_ready ? <Badge tone="violet">Draft ready</Badge> : null}
                   </div>
-                  <p className="muted mt-0.5 text-xs">
-                    <b>{st.verb}:</b> {st.label} · {o.meta?.board_check?.budget ?? o.budget_text ?? "budget not stated"} · posted {fmtDate(o.published_at)}
+                  <p className="muted mt-0.5 pl-7 text-xs">
+                    {o.budget_text ?? "budget not stated"} · {o.bids ? `${o.bids} offers` : "no visible offers"} · posted {fmtDate(o.posted)}
+                    {" · "}<a href={o.url} target="_blank" rel="noopener noreferrer nofollow" className="underline">original ↗</a>
                   </p>
+                  <p className="mt-0.5 pl-7 text-xs"><b>Next:</b> {o.next_step ?? "Review the lead"}</p>
+                  {o.flags && o.flags.length ? <p className="mt-0.5 pl-7 text-xs text-amber-700 dark:text-amber-300">Check: {o.flags.join(" · ")}</p> : null}
                 </li>
               );
             })}
-          </ul>
+          </ol>
         ) : <p className="muted text-sm">No live opportunities with a permitted route right now.</p>}
       </Section>
 
