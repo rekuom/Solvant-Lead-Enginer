@@ -64,21 +64,24 @@ def main() -> int:
         print("base URL must be https")
         return 2
 
-    s, h, b = http("GET", f"{base}/api/engine/health")
-    check("engine health routed to health function", s == 200 and j(b).get("endpoint") == "health", f"HTTP {s}")
-    s, h, b = http("POST", f"{base}/api/engine/intake", b"{}", {"Content-Type": "application/json"})
-    check("intake routed and requires sign-in", s == 401 and h.get("X-Solvant-Endpoint") == "intake", f"HTTP {s}")
-    s, h, b = http("POST", f"{base}/api/engine/inbound-email", b"x", {"Content-Type": "message/rfc822"})
-    check("inbound-email routed and requires a token", s == 401 and h.get("X-Solvant-Endpoint") == "inbound-email", f"HTTP {s}")
-    s, h, b = http("GET", f"{base}/api/engine/intake")
-    check("intake rejects GET", s == 405, f"HTTP {s}")
+    # Private-tool access: without the device cookie nothing is served (no login page to find); before the one-time setup
+    # every page redirects to the static /setup-required instructions.
     s, h, b = http("GET", f"{base}/")
-    check("signed-out visitor redirected to /login", s in (302, 303, 307, 308) and "/login" in h.get("Location", ""), f"HTTP {s}")
-    s, h, b = http("GET", f"{base}/login")
-    check("login page served", s == 200, f"HTTP {s}")
-    check("security headers present", h.get("X-Frame-Options") == "DENY" and "noindex" in h.get("X-Robots-Tag", "") and h.get("X-Content-Type-Options") == "nosniff")
-    s, h, b = http("GET", f"{base}/api/export")
-    check("CSV export denied without a session", s in (302, 303, 307, 308, 401), f"HTTP {s}")
+    unconfigured = s in (302, 303, 307, 308) and "/setup-required" in h.get("Location", "")
+    check("dashboard not served without the device cookie", s == 404 or unconfigured, f"HTTP {s}")
+    for path in ("/opportunities", "/settings", "/setup?key=wrong-key-wrong-key-wrong", "/api/export", "/device", "/login"):
+        s, h, b = http("GET", f"{base}{path}")
+        check(f"{path} hidden without the device cookie", s == 404 or (unconfigured and s in (302, 303, 307, 308)), f"HTTP {s}")
+    s, h, b = http("GET", f"{base}/api/engine/health")
+    check("engine health hidden without the device cookie", s == 404, f"HTTP {s}")
+    for ep in ("intake", "discover"):
+        s, h, b = http("POST", f"{base}/api/engine/{ep}", b"{}", {"Content-Type": "application/json"})
+        check(f"{ep} hidden without the device cookie", s == 404, f"HTTP {s}")
+    s, h, b = http("POST", f"{base}/api/engine/inbound-email", b"x", {"Content-Type": "message/rfc822"})
+    check("inbound-email still requires its own token", s == 401 and h.get("X-Solvant-Endpoint") == "inbound-email", f"HTTP {s}")
+    for path in ("/api/email/connect", "/api/email/callback?code=x&state=y", "/outreach"):
+        s, h, b = http("GET", f"{base}{path}")
+        check(f"{path} hidden without the device cookie", s == 404 or (unconfigured and s in (302, 303, 307, 308)), f"HTTP {s}")
 
     jwt = os.environ.get("SMOKE_USER_JWT", "")
     lead = {k: os.environ.get(f"SMOKE_LEAD_{k.upper()}", "") for k in ("source", "url", "text")}

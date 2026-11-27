@@ -17,9 +17,9 @@ export default async function Settings() {
     <div className="space-y-5">
       <PageHeader title="Settings" subtitle="Private workspace · this device is trusted" />
       <Section title="This device">
-        <p className="text-sm">This device is trusted and opens straight into the dashboard. The session renews itself each time you visit, so there is no daily sign-in.</p>
-        <p className="muted mt-1 text-xs">Lost or replaced a device? Forget it here, then authorise the new one with a one-time e-mailed link.</p>
-        <form action="/auth/signout" method="post" className="mt-2"><button className="btn">Forget this device</button></form>
+        <p className="text-sm">This device has private access and opens straight into the dashboard. Nobody else can open the site: other devices and other web addresses get &quot;Not found&quot;.</p>
+        <p className="muted mt-1 text-xs">To add another of your devices, open <code>/setup?key=…</code> there once with your access key. To revoke every device at once, change <code>SOLVANT_ACCESS_KEY</code> in Vercel.</p>
+        <form action="/api/device/forget" method="post" className="mt-2"><button className="btn">Remove access from this device</button></form>
       </Section>
 
       {admin ? (

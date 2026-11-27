@@ -10,10 +10,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center p-4">
         <div className="panel space-y-3 p-6">
-          <h1 className="text-lg font-semibold">This device isn&apos;t authorised for the workspace</h1>
-          <p className="muted text-sm">It is signed in as <b>{user.email}</b>, which is not the owner account. First-time setup only: enter the one-time setup code.</p>
+          <h1 className="text-lg font-semibold">Owner account not set up</h1>
+          <p className="muted text-sm">The workspace owner has no admin membership yet. First-time setup only: enter the one-time setup code.</p>
           <ClaimAccess />
-          <form action="/auth/signout" method="post"><button className="btn w-full justify-center">Use a different account</button></form>
         </div>
       </main>
     );

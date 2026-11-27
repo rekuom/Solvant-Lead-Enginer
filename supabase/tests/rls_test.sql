@@ -233,6 +233,24 @@ select pg_temp.expect_error($q$select solvant.member_ingest_discovery('{}', '[]'
 reset role;
 delete from solvant.opportunities where url = 'https://www.codeur.com/projects/9-dashboard-run';
 
+-- 4d. e-mail outreach: encrypted mailbox token is server-only ------------------------------------------------------------
+insert into solvant.mail_accounts (provider, email, display_name, refresh_token_enc) values ('microsoft', 'owner@example.invalid', 'Owner', 'v1:ciphertext');
+insert into solvant.outreach_emails (to_address, subject, body, status, sent_at) values ('buyer@example.invalid', 'Hello', 'Body', 'sent', now());
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.check((select email from solvant.mail_accounts limit 1) = 'owner@example.invalid', 'owner sees the connected mailbox');
+select pg_temp.expect_error('select refresh_token_enc from solvant.mail_accounts', 'mailbox token is never readable from the browser');
+select pg_temp.check((select count(*) from solvant.outreach_emails) = 1, 'owner sees the sent-email log');
+select pg_temp.expect_error($q$insert into solvant.outreach_emails (to_address, subject, body, status) values ('x@example.invalid','s','b','sent')$q$,
+                            'browser cannot fake a sent e-mail');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000ff');
+select pg_temp.check((select count(*) from solvant.outreach_emails) = 0 and (select count(*) from solvant.mail_accounts) = 0, 'non-member sees no mailbox or e-mails');
+reset role;
+set role anon;
+select pg_temp.expect_error('select id from solvant.mail_accounts', 'anon cannot see mailboxes');
+reset role;
+delete from solvant.outreach_emails; delete from solvant.mail_accounts;
+
 -- 5. viewer / editor permissions ------------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.check((select count(*) from solvant.opportunities) = 5, 'viewer reads opportunities');

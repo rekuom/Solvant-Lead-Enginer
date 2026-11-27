@@ -46,3 +46,27 @@ class QuickRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EngineDeviceGate(unittest.TestCase):
+    """The Python engine endpoints apply the same private-access rule as the website proxy."""
+    KEY = "correct-horse-battery-staple-solvant-2026"
+    VECTOR = "17a6e92056aa2773c5af804929684ee3e1546527f41503ec59f6be132437fda0"   # same value the TypeScript test pins
+
+    def gate(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web" / "pyengine"))
+        import solvant_api
+        return solvant_api.device_ok
+
+    def test_cookie_and_host_required(self):
+        ok = self.gate()
+        h = {"host": "solvant-lead-enginer-web-i2ae.vercel.app", "cookie": f"a=1; solvant_device={self.VECTOR}"}
+        with mock.patch.dict("os.environ", {"SOLVANT_ACCESS_KEY": self.KEY, "SOLVANT_PUBLIC_HOST": "solvant-lead-enginer-web-i2ae.vercel.app"}, clear=False):
+            self.assertTrue(ok(h))
+            self.assertFalse(ok({**h, "cookie": "solvant_device=" + "0" * 64}))
+            self.assertFalse(ok({**h, "cookie": ""}))
+            self.assertFalse(ok({**h, "host": "solvant-lead-enginer-git-x.vercel.app"}))     # alternative deployment URL
+        with mock.patch.dict("os.environ", {"SOLVANT_ACCESS_KEY": ""}, clear=False):
+            self.assertFalse(ok(h))                                                           # not configured: closed

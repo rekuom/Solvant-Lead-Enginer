@@ -13,7 +13,11 @@ External content is treated as untrusted data; files are size-limited and never 
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import os
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler
 
 from signal_engine.discovery.platform import ENGINE_VERSION  # noqa: E402
@@ -21,6 +25,27 @@ from signal_engine.discovery.platform.intake import IntakeRejected, is_synthetic
 from signal_engine.discovery.platform.rest import RestError, get_user, rpc  # noqa: E402
 
 MAX_BODY = 3_000_000
+DEFAULT_HOST = "solvant-lead-enginer-web-i2ae.vercel.app"
+
+
+def device_ok(headers: dict) -> bool:
+    """Same private-access rule as the website proxy: production host only, and the httpOnly device cookie must be the
+    HMAC of SOLVANT_ACCESS_KEY. Machine endpoints (inbound e-mail) authenticate with their own revocable token instead."""
+    key = os.environ.get("SOLVANT_ACCESS_KEY", "")
+    if len(key) < 24:
+        return False
+    hosts = [h.strip().lower() for h in os.environ.get("SOLVANT_PUBLIC_HOST", DEFAULT_HOST).split(",") if h.strip()]
+    host = (headers.get("x-forwarded-host") or headers.get("host") or "").split(",")[0].strip().lower()
+    if host not in hosts:
+        return False
+    jar = SimpleCookie()
+    try:
+        jar.load(headers.get("cookie", ""))
+    except Exception:
+        return False
+    got = jar["solvant_device"].value if "solvant_device" in jar else ""
+    expected = hmac.new(key.encode(), b"solvant-device-v1", hashlib.sha256).hexdigest()
+    return hmac.compare_digest(got, expected)
 
 
 def handle_discover(headers: dict, body: bytes) -> tuple[int, dict]:
@@ -116,6 +141,8 @@ class EngineHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not device_ok({k.lower(): v for k, v in self.headers.items()}):
+            return self._send(404, {"error": "not found"})
         if self.OP == "health":
             return self._send(200, {"ok": True, "endpoint": "health", "engine": ENGINE_VERSION})
         return self._send(405, {"error": "method not allowed", "endpoint": self.OP})
@@ -130,6 +157,8 @@ class EngineHandler(BaseHTTPRequestHandler):
             return self._send(413, {"error": "request body missing or too large"})
         body = self.rfile.read(length) if length else b""
         headers = {k.lower(): v for k, v in self.headers.items()}
+        if self.OP != "inbound-email" and not device_ok(headers):
+            return self._send(404, {"error": "not found"})
         try:
             status, payload = (handle_intake(headers, body) if self.OP == "intake" else handle_discover(headers, body)
                                if self.OP == "discover" else handle_inbound(headers, body))

@@ -44,7 +44,7 @@ rollback;
 | # | Test | How | Expected |
 |---|---|---|---|
 | B1 | Endpoint routing | `python3 scripts/smoke_test.py --base-url https://<app>` | health 200; intake 401 with `X-Solvant-Endpoint: intake`; inbound-email 401; intake GET 405 |
-| B2 | Trusted-device access | Open the site on an unauthorised device; authorise once via the e-mailed link (or password); reopen days later | Unauthorised devices see only /device (no data); an authorised device opens straight into the dashboard; the session renews on each visit; "Forget this device" in Settings ends it |
+| B2 | Private access | Open the site on a device without the setup cookie, on a preview URL, and on your device after `/setup?key=…` | 404 for the first two (no login page anywhere); your device opens straight into the dashboard and stays in for ~400 days |
 | B3 | Non-member denial | Sign in with the second account (no role) | "Access pending" page; smoke script `SMOKE_NONMEMBER_JWT` checks pass |
 | B4 | Admin claim | Enter the one-time code from `solvant.create_bootstrap_code()` | Becomes admin; reusing the code fails |
 | B5 | Manual lead creation | Add leads → paste a real public post you may store | Record opens with pipeline, intent and evidence; verification "Unverified" |
