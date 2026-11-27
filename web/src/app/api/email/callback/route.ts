@@ -1,23 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { adminClient } from "@/lib/server/admin";
 import { exchangeCode, me, SCOPES } from "@/lib/server/microsoft";
-import { safeEqual } from "@/lib/server/device";
+import { OAUTH_COOKIE_NAME, verifyOAuthState } from "@/lib/server/device";
 import { encryptToken } from "@/lib/server/token-crypto";
 
-/** Microsoft redirects here after consent: verify state, exchange the code, store the refresh token encrypted. */
+/** Microsoft redirects here after consent: verify the device-bound state, redeem the code with the PKCE verifier, store the
+ *  refresh token encrypted. The redirect back to /outreach passes through the proxy's same-site re-navigation. */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const back = (q: string) => {
     const res = NextResponse.redirect(new URL(`/outreach?${q}`, request.url));
-    res.cookies.set("ms_oauth", "", { path: "/api/email", maxAge: 0 });
+    res.cookies.set(OAUTH_COOKIE_NAME, "", { path: "/api/email", maxAge: 0 });
     return res;
   };
-  const [state, verifier] = (request.cookies.get("ms_oauth")?.value ?? "").split(".");
   if (url.searchParams.get("error")) return back("error=consent_declined");
+  // state must match the signed, device-bound cookie set by /api/email/connect; the code is only redeemable with its PKCE verifier
+  const oauth = await verifyOAuthState(request.cookies.get(OAUTH_COOKIE_NAME)?.value, url.searchParams.get("state"));
   const code = url.searchParams.get("code");
-  if (!code || !state || !verifier || !safeEqual(url.searchParams.get("state") ?? "", state)) return back("error=invalid_state");
+  if (!code || !oauth) return back("error=invalid_state");
   try {
-    const tokens = await exchangeCode(request.headers.get("host")!, code, verifier);
+    const tokens = await exchangeCode(url.origin, code, oauth.verifier);
     if (!tokens.refresh_token) return back("error=no_refresh_token");
     const who = await me(tokens.access_token);
     if (!who.email) return back("error=no_mailbox");

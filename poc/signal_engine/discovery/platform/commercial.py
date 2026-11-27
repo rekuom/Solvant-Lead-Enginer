@@ -2,6 +2,7 @@
 
   python -m signal_engine.discovery.platform.commercial drafts out/agent/drafts-YYYYMMDD.json   # save drafts (never sent)
   python -m signal_engine.discovery.platform.commercial report [--limit 8]                     # best live opportunities
+  python -m signal_engine.discovery.platform.commercial device-link [--label "Owner laptop"]   # one-time website setup link
 
 Drafts are stored privately in the database (proposals, origin 'claude_draft', status 'draft'); a human reviews, edits and
 submits them on the platform. Nothing here contacts anyone. The draft file lives in the git-ignored out/ folder.
@@ -76,6 +77,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         if argv[:1] == ["drafts"] and len(argv) > 1:
             drafts = load_drafts(argv[1])
             print(json.dumps({"drafts": len(drafts), "database": rpc("save_proposal_drafts", {"p_token": TOKEN(), "p_drafts": drafts})}))
+            return 0
+        if argv[:1] == ["device-link"]:
+            label = argv[argv.index("--label") + 1] if "--label" in argv else "Owner device"
+            code = rpc("create_device_setup_code", {"p_token": TOKEN(), "p_label": label})
+            host = os.environ.get("SOLVANT_PUBLIC_HOST", "solvant-lead-enginer-web-i2ae.vercel.app")
+            print(f"https://{host}/setup/{code}   (works once, expires in 15 minutes)")
             return 0
         if argv[:1] == ["report"]:
             limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 8

@@ -104,6 +104,28 @@ jobs:
         run: node --test ../integrations/email-alert-forwarder/worker.test.mjs
       - run: npm run build
 
+  browser-access-flow:
+    name: browser test — private access, one-time setup, Microsoft OAuth redirect (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Install Chromium for Playwright (test only; not a dependency of the app)
+        run: npm install --no-save --no-audit --no-fund playwright@1.63.0 && npx playwright install --with-deps chromium
+      - name: Real-browser redirect flow against local stand-ins (no secrets, no network services)
+        run: bash e2e/run.sh
+
   # Deliberate-failure test of the discovery workflow's fail-closed publication rule, evaluated by GitHub Actions itself.
   # Same step ids and the SAME `if:` expression as multi-source-discovery.yml (policy_check.py enforces both copies).
   # The "publish" step is a stand-in (echo), so nothing is uploaded even if the rule were broken.

@@ -1,25 +1,34 @@
 import { requireMember } from "@/lib/session";
 import { Badge, PageHeader, Section, fmtDate } from "@/components/ui";
-import { revokeIngestToken } from "../admin-actions";
-import { LlmForm, PurgeForm, TokenForm } from "./forms";
+import { revokeDevice, revokeIngestToken } from "../admin-actions";
+import { AddDeviceForm, LlmForm, PurgeForm, TokenForm } from "./forms";
 
 export const metadata = { title: "Settings" };
 
 export default async function Settings() {
   const { supabase, role, user } = await requireMember();
   const admin = role === "admin";
-  const [{ data: tokens }, { data: settings }] = await Promise.all([
+  const [{ data: tokens }, { data: settings }, { data: devices }] = await Promise.all([
     admin ? supabase.from("ingest_tokens").select("id,name,scopes,created_at,last_used_at,revoked_at").order("created_at", { ascending: false }) : Promise.resolve({ data: [] }),
     supabase.from("app_settings").select("key,value"),
+    admin ? supabase.from("devices").select("id,label,created_at,last_seen_at,revoked_at").order("created_at", { ascending: false }) : Promise.resolve({ data: [] }),
   ]);
   const setting = (k: string) => (settings ?? []).find((s) => s.key === k)?.value ?? {};
   return (
     <div className="space-y-5">
       <PageHeader title="Settings" subtitle="Private workspace · this device is trusted" />
-      <Section title="This device">
-        <p className="text-sm">This device has private access and opens straight into the dashboard. Nobody else can open the site: other devices and other web addresses get &quot;Not found&quot;.</p>
-        <p className="muted mt-1 text-xs">To add another of your devices, open <code>/setup?key=…</code> there once with your access key. To revoke every device at once, change <code>SOLVANT_ACCESS_KEY</code> in Vercel.</p>
-        <form action="/api/device/forget" method="post" className="mt-2"><button className="btn">Remove access from this device</button></form>
+      <Section title="Devices with access">
+        <ul className="mb-3 divide-y line text-sm">
+          {((devices ?? []) as { id: string; label: string | null; created_at: string; last_seen_at: string | null; revoked_at: string | null }[]).map((d) => (
+            <li key={d.id} className="flex flex-wrap items-center gap-2 py-2">
+              <span className="min-w-0 flex-1 truncate">{d.label || "Device"}</span>
+              <span className="muted text-xs">added {fmtDate(d.created_at)}{d.last_seen_at ? ` · last used ${fmtDate(d.last_seen_at)}` : ""}</span>
+              {d.revoked_at ? <Badge tone="gray">Revoked</Badge> : admin ? <form action={revokeDevice}><input type="hidden" name="id" value={d.id} /><button className="btn btn-danger">Revoke</button></form> : null}
+            </li>
+          ))}
+        </ul>
+        {admin ? <AddDeviceForm /> : null}
+        <form action="/api/device/forget" method="post" className="mt-3"><button className="btn">Remove access from this device</button></form>
       </Section>
 
       {admin ? (

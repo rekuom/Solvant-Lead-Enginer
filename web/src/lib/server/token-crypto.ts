@@ -1,11 +1,11 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
-/** AES-256-GCM for the mailbox refresh token at rest. The key is derived on the server from SOLVANT_ACCESS_KEY, so the
- *  database alone (or a database leak) never yields a usable mailbox token. Rotating the access key requires reconnecting. */
+/** AES-256-GCM for the mailbox refresh token at rest. The key is derived on the server from SUPABASE_SECRET_KEY (never stored in the database), so the
+ *  database alone (or a database leak) never yields a usable mailbox token. Rotating that key requires reconnecting the mailbox. */
 function key(): Buffer {
-  const secret = process.env.SOLVANT_ACCESS_KEY ?? "";
-  if (secret.length < 24) throw new Error("SOLVANT_ACCESS_KEY is not configured");
+  const secret = process.env.SUPABASE_SECRET_KEY ?? "";
+  if (secret.length < 20) throw new Error("SUPABASE_SECRET_KEY is not configured");
   return createHash("sha256").update(`solvant-mail-token-v1:${secret}`).digest();
 }
 
