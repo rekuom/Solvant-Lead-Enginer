@@ -1,4 +1,5 @@
 "use server";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
@@ -92,4 +93,22 @@ export async function purgeExpired(_: State): Promise<State> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("purge_expired_excerpts");
   return error ? { error: error.message } : { error: "", ok: `${data ?? 0} expired excerpt(s) removed` };
+}
+
+export async function createDeviceLink(_: { error: string; link?: string }, form: FormData): Promise<{ error: string; link?: string }> {
+  const supabase = await createClient();
+  const label = String(form.get("label") ?? "").trim().slice(0, 120) || null;
+  const { data, error } = await supabase.rpc("create_device_setup_code", { p_token: "", p_label: label });
+  if (error || !data) return { error: "Could not create a setup link." };
+  const h = await headers();
+  return { error: "", link: `https://${h.get("host")}/setup/${data}` };
+}
+
+export async function revokeDevice(form: FormData) {
+  const supabase = await createClient();
+  const id = String(form.get("id") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("invalid id");
+  const { error } = await supabase.rpc("revoke_device", { p_device: id });
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings");
 }

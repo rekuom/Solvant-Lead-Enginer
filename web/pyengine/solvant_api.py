@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler
 
@@ -26,13 +27,16 @@ from signal_engine.discovery.platform.rest import RestError, get_user, rpc  # no
 
 MAX_BODY = 3_000_000
 DEFAULT_HOST = "solvant-lead-enginer-web-i2ae.vercel.app"
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
 def device_ok(headers: dict) -> bool:
-    """Same private-access rule as the website proxy: production host only, and the httpOnly device cookie must be the
-    HMAC of SOLVANT_ACCESS_KEY. Machine endpoints (inbound e-mail) authenticate with their own revocable token instead."""
-    key = os.environ.get("SOLVANT_ACCESS_KEY", "")
-    if len(key) < 24:
+    """Same private-access rule as the website proxy: production host only, and the httpOnly device cookie must be
+    "<device id>.<HMAC>" signed with the key derived from the server-only SUPABASE_SECRET_KEY. (Revocation is enforced by
+    the website proxy; these endpoints additionally require the owner session it issues.) Machine endpoints (inbound
+    e-mail) authenticate with their own revocable token instead."""
+    secret = os.environ.get("SUPABASE_SECRET_KEY", "")
+    if len(secret) < 20:
         return False
     hosts = [h.strip().lower() for h in os.environ.get("SOLVANT_PUBLIC_HOST", DEFAULT_HOST).split(",") if h.strip()]
     host = (headers.get("x-forwarded-host") or headers.get("host") or "").split(",")[0].strip().lower()
@@ -43,9 +47,12 @@ def device_ok(headers: dict) -> bool:
         jar.load(headers.get("cookie", ""))
     except Exception:
         return False
-    got = jar["solvant_device"].value if "solvant_device" in jar else ""
-    expected = hmac.new(key.encode(), b"solvant-device-v1", hashlib.sha256).hexdigest()
-    return hmac.compare_digest(got, expected)
+    value = jar["solvant_device"].value if "solvant_device" in jar else ""
+    device, _, sig = value.partition(".")
+    if not UUID_RE.match(device) or not sig:
+        return False
+    expected = hmac.new(f"solvant-device-v2:{secret}".encode(), f"device:{device}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)
 
 
 def handle_discover(headers: dict, body: bytes) -> tuple[int, dict]:

@@ -5,20 +5,21 @@ import "server-only";
  *  Scopes: send mail, read mail (to detect replies and bounce notices), basic profile, offline access (refresh token). */
 export const SCOPES = ["offline_access", "User.Read", "Mail.Send", "Mail.Read"];
 const tenant = () => process.env.MICROSOFT_TENANT || "common";
-const AUTH = () => `https://login.microsoftonline.com/${tenant()}/oauth2/v2.0`;
-const GRAPH = "https://graph.microsoft.com/v1.0";
+// overridable only so the redirect flow can be tested end to end against a local stand-in; production uses the defaults
+const AUTH = () => process.env.MICROSOFT_AUTHORITY_URL || `https://login.microsoftonline.com/${tenant()}/oauth2/v2.0`;
+const GRAPH_BASE = () => process.env.MICROSOFT_GRAPH_URL || "https://graph.microsoft.com/v1.0";
 
 export function microsoftConfigured(): boolean {
   return !!process.env.MICROSOFT_CLIENT_ID && !!process.env.MICROSOFT_CLIENT_SECRET;
 }
 
-export function redirectUri(host: string): string {
-  return `https://${host}/api/email/callback`;
+export function redirectUri(origin: string): string {
+  return `${origin}/api/email/callback`;
 }
 
-export function authorizeUrl(host: string, state: string, challenge: string): string {
+export function authorizeUrl(origin: string, state: string, challenge: string): string {
   const q = new URLSearchParams({
-    client_id: process.env.MICROSOFT_CLIENT_ID!, response_type: "code", redirect_uri: redirectUri(host), response_mode: "query",
+    client_id: process.env.MICROSOFT_CLIENT_ID!, response_type: "code", redirect_uri: redirectUri(origin), response_mode: "query",
     scope: SCOPES.join(" "), state, code_challenge: challenge, code_challenge_method: "S256", prompt: "select_account",
   });
   return `${AUTH()}/authorize?${q}`;
@@ -36,14 +37,14 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenSet> {
   return data as TokenSet;
 }
 
-export const exchangeCode = (host: string, code: string, verifier: string) =>
-  tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri(host), code_verifier: verifier, scope: SCOPES.join(" ") });
+export const exchangeCode = (origin: string, code: string, verifier: string) =>
+  tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri(origin), code_verifier: verifier, scope: SCOPES.join(" ") });
 
 export const refreshAccess = (refreshToken: string) =>
   tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken, scope: SCOPES.join(" ") });
 
 async function graph(accessToken: string, path: string, init?: RequestInit) {
-  const res = await fetch(`${GRAPH}${path}`, { ...init, headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+  const res = await fetch(`${GRAPH_BASE()}${path}`, { ...init, headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", ...(init?.headers ?? {}) } });
   if (res.status === 202 || res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Outlook: ${String(data?.error?.message || res.status).slice(0, 300)}`);

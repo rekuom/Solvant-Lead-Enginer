@@ -9,7 +9,7 @@ insert into auth.users values
 -- tender collectors are off by default since 20261119000005; the failing-source scenario below uses TED explicitly
 update solvant.sources set enabled = true where key = 'ted';
 create temp table t_codes (k text primary key, v text);
-grant all on t_codes to authenticated, anon;
+grant all on t_codes to authenticated, anon, service_role;
 insert into t_codes select 'boot', solvant.create_bootstrap_code();
 
 create function pg_temp.as_user(p uuid) returns void language plpgsql as $$
@@ -32,7 +32,7 @@ begin
   if not coalesce(p_cond, false) then raise exception 'FAIL %', p_label; end if;
   raise notice 'ok   %', p_label;
 end $$;
-grant execute on all functions in schema pg_temp to anon, authenticated;
+grant execute on all functions in schema pg_temp to anon, authenticated, service_role;
 
 -- 1. anonymous access ------------------------------------------------------------------------------
 set role anon;
@@ -250,6 +250,35 @@ set role anon;
 select pg_temp.expect_error('select id from solvant.mail_accounts', 'anon cannot see mailboxes');
 reset role;
 delete from solvant.outreach_emails; delete from solvant.mail_accounts;
+
+-- 4e. one-time device setup codes ------------------------------------------------------------------------------------------
+select set_config('request.headers', json_build_object('x-signal-token', (select v from t_codes where k = 'ingest'))::text, false);
+set role anon;
+insert into t_codes select 'dev1', solvant.create_device_setup_code('', 'Owner laptop');
+reset role;
+select set_config('request.headers', '', false);
+select pg_temp.check((select count(*) from solvant.device_setup_codes where code_hash = (select v from t_codes where k = 'dev1')) = 0,
+                     'setup code is stored only as a hash');
+set role service_role;
+insert into t_codes select 'devid', solvant.redeem_device_setup_code((select v from t_codes where k = 'dev1'))::text;
+select pg_temp.check((select v from t_codes where k = 'devid') is not null, 'setup code registers a device');
+select pg_temp.check(solvant.redeem_device_setup_code((select v from t_codes where k = 'dev1')) is null, 'setup code works only once');
+select pg_temp.check(solvant.device_active((select v from t_codes where k = 'devid')::uuid), 'new device is active');
+reset role;
+update solvant.device_setup_codes set expires_at = now() - interval '1 minute' where used_at is null;
+set role anon;
+select pg_temp.expect_error($q$select solvant.create_device_setup_code('', 'x')$q$, 'anon without token cannot create setup codes');
+select pg_temp.expect_error($q$select solvant.redeem_device_setup_code('abc')$q$, 'browser roles cannot redeem codes directly');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select solvant.revoke_device((select v from t_codes where k = 'devid')::uuid);
+reset role;
+set role service_role;
+select pg_temp.check(not solvant.device_active((select v from t_codes where k = 'devid')::uuid), 'revoked device loses access');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.expect_error($q$select solvant.revoke_device(gen_random_uuid())$q$, 'non-admin cannot revoke devices');
+reset role;
 
 -- 5. viewer / editor permissions ------------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');

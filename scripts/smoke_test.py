@@ -69,7 +69,7 @@ def main() -> int:
     s, h, b = http("GET", f"{base}/")
     unconfigured = s in (302, 303, 307, 308) and "/setup-required" in h.get("Location", "")
     check("dashboard not served without the device cookie", s == 404 or unconfigured, f"HTTP {s}")
-    for path in ("/opportunities", "/settings", "/setup?key=wrong-key-wrong-key-wrong", "/api/export", "/device", "/login"):
+    for path in ("/opportunities", "/settings", "/setup/" + "0" * 64, "/api/export", "/device", "/login"):
         s, h, b = http("GET", f"{base}{path}")
         check(f"{path} hidden without the device cookie", s == 404 or (unconfigured and s in (302, 303, 307, 308)), f"HTTP {s}")
     s, h, b = http("GET", f"{base}/api/engine/health")

@@ -77,8 +77,8 @@ def _load_endpoint(bundle: Path, name: str):
     return mod.handler
 
 
-DEVICE_KEY = "correct-horse-battery-staple-solvant-2026"
-DEVICE_COOKIE = "17a6e92056aa2773c5af804929684ee3e1546527f41503ec59f6be132437fda0"
+DEVICE_SECRET = "sb_secret_test_value_for_unit_tests_only"
+DEVICE_COOKIE = "11111111-2222-4333-8444-555555555555.a03450dbacf447fe394756b624c555cda6d0ef70a2dcbc8a140d19b4f0dab87d"
 
 
 class DeployedEndpoints(unittest.TestCase):
@@ -90,7 +90,7 @@ class DeployedEndpoints(unittest.TestCase):
         os.environ["SUPABASE_PUBLISHABLE_KEY"] = PUBLISHABLE
         os.environ.pop("SUPABASE_ANON_KEY", None)
         # private-tool access: these tests act as the authorised device on the production host
-        os.environ["SOLVANT_ACCESS_KEY"] = DEVICE_KEY
+        os.environ["SUPABASE_SECRET_KEY"] = DEVICE_SECRET
         os.environ["SOLVANT_PUBLIC_HOST"] = "solvant.test"
         # copy the deployment layout (what vercel.json bundles: api/engine/*.py + includeFiles pyengine/**)
         cls.tmp = tempfile.TemporaryDirectory()
